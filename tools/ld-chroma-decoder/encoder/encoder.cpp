@@ -48,10 +48,10 @@
 
 #include "encoder.h"
 
-Encoder::Encoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, LdDecodeMetaData &_metaData,
-                 int _fieldOffset, bool _isComponent)
-    : inputFile(_inputFile), tbcFile(_tbcFile), chromaFile(_chromaFile), metaData(_metaData),
-      fieldOffset(_fieldOffset), isComponent(_isComponent)
+Encoder::Encoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, QFile &_chroma2File, LdDecodeMetaData &_metaData,
+                 int _fieldOffset, bool _isComponent, OutputType _outFormat)
+    : inputFile(_inputFile), tbcFile(_tbcFile), chromaFile(_chromaFile), chroma2File(_chroma2File), metaData(_metaData),
+      fieldOffset(_fieldOffset), isComponent(_isComponent), outFormat(_outFormat)
 {
 }
 
@@ -118,7 +118,8 @@ bool Encoder::encodeField(qint32 fieldNo)
     const qint32 lineOffset = fieldNo % 2;
 
     // Output from the encoder
-    std::vector<double> outputC(videoParameters.fieldWidth);
+    std::vector<double> outputC1(videoParameters.fieldWidth);
+    std::vector<double> outputC2(videoParameters.fieldWidth);
     std::vector<double> outputVBS(videoParameters.fieldWidth);
 
     // Buffer for conversion
@@ -139,16 +140,21 @@ bool Encoder::encodeField(qint32 fieldNo)
                 inputData = reinterpret_cast<const quint16 *>(inputFrame.data()) + ((frameLine - activeTop) * activeWidth * 3);
             }
         }
-        encodeLine(fieldNo, frameLine, inputData, outputC, outputVBS);
+        encodeLine(fieldNo, frameLine, inputData, outputC1, outputC2, outputVBS);
 
-        if (chromaFile.isOpen()) {
+        if (outFormat == OUT_CHROMA) {
             // Write C and VBS to separate output files
-            if (!writeLine(outputC, outputBuffer, true, chromaFile)) return false;
+            if (!writeLine(outputC1, outputBuffer, true, chromaFile)) return false;
             if (!writeLine(outputVBS, outputBuffer, false, tbcFile)) return false;
-        } else {
+        } else if(outFormat == OUT_COMPONENT) {
+            // Write VBS, U/I, and V/Q to separate output file
+            if (!writeLine(outputC1, outputBuffer, true, chromaFile)) return false;
+            if (!writeLine(outputC2, outputBuffer, true, chroma2File)) return false;
+            if (!writeLine(outputVBS, outputBuffer, false, tbcFile)) return false;
+        }else {
             // Combine C and VBS into a single output file
             for (qint32 x = 0; x < videoParameters.fieldWidth; x++) {
-                outputVBS[x] += outputC[x];
+                outputVBS[x] += outputC1[x];
             }
             if (!writeLine(outputVBS, outputBuffer, false, tbcFile)) return false;
         }
@@ -162,7 +168,7 @@ bool Encoder::encodeField(qint32 fieldNo)
     return true;
 }
 
-bool Encoder::writeLine(const std::vector<double> &input, std::vector<quint16> &buffer, bool isChroma, QFile &file)
+bool Encoder::writeLine(const std::vector<double> &input, std::vector<quint16> &buffer, bool offsetChroma, QFile &file)
 {
     // Scale to a 16-bit output sample and limit the excursion to the
     // permitted sample values. [EBU p6] [SMPTE p6]
@@ -173,7 +179,9 @@ bool Encoder::writeLine(const std::vector<double> &input, std::vector<quint16> &
     //
     // Separate chroma is scaled like the normal signal, but centred on 0x7FFF.
     const double scale = videoParameters.white16bIre - videoParameters.black16bIre;
-    const double offset = isChroma ? 0x7FFF : videoParameters.black16bIre;
+    double offset = offsetChroma ? 0x7FFF : videoParameters.black16bIre;
+    //if(outFormat == OUT_COMPONENT)
+    //    offset = 0;
     for (qint32 x = 0; x < videoParameters.fieldWidth; x++) {
         const double scaled = qBound(static_cast<double>(0x0100), (input[x] * scale) + offset, static_cast<double>(0xFEFF));
         buffer[x] = static_cast<quint16>(scaled);

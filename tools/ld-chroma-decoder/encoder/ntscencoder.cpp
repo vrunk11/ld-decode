@@ -40,9 +40,9 @@
 #include <array>
 #include <cmath>
 
-NTSCEncoder::NTSCEncoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, LdDecodeMetaData &_metaData,
-                         int _fieldOffset, bool _isComponent, ChromaMode _chromaMode, bool _addSetup)
-    : Encoder(_inputFile, _tbcFile, _chromaFile, _metaData, _fieldOffset, _isComponent),
+NTSCEncoder::NTSCEncoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, QFile &_chroma2File, LdDecodeMetaData &_metaData,
+                         int _fieldOffset, bool _isComponent, OutputType _outFormat, ChromaMode _chromaMode, bool _addSetup)
+    : Encoder(_inputFile, _tbcFile, _chromaFile, _chroma2File, _metaData, _fieldOffset, _isComponent, _outFormat),
       chromaMode(_chromaMode), addSetup(_addSetup)
 {
     // NTSC subcarrier frequency [Poynton p511]
@@ -167,11 +167,13 @@ static const double SIN_33 = sin(33.0 * M_PI / 180.0);
 static const double COS_33 = cos(33.0 * M_PI / 180.0);
 
 void NTSCEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *inputData,
-                             std::vector<double> &outputC, std::vector<double> &outputVBS)
+                             std::vector<double> &outputC1, std::vector<double> &outputC2,
+                             std::vector<double> &outputVBS)
 {
     if (frameLine == 525) {
         // Dummy last line, filled with blanking
-        std::fill(outputC.begin(), outputC.end(), 0.0);
+        std::fill(outputC1.begin(), outputC1.end(), 0.0);
+        std::fill(outputC2.begin(), outputC2.end(), 0.0);
         const double blanking = (static_cast<double>(blankingIre) - videoParameters.black16bIre)
                                 / (videoParameters.white16bIre - videoParameters.black16bIre);
         std::fill(outputVBS.begin(), outputVBS.end(), blanking);
@@ -313,20 +315,34 @@ void NTSCEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *in
         const double burst = sin(a + burstOffset) * burstAmplitude / 2.0;
 
         // Encode the chroma signal
-        double chroma;
+        double chroma, c1, c2;
         if (chromaMode == WIDEBAND_YUV) {
             // Y'UV [Poynton p338]
-            chroma = C1[x] * sin(a) + C2[x] * cos(a);
+            //chroma = C1[x] * sin(a) + C2[x] * cos(a);
+            c1 = C1[x] * sin(a);
+            c2 = C2[x] * cos(a);
+            chroma = c1 + c2;
+            //qInfo() << chroma-chroma2;
         } else {
             // Y'IQ [Poynton p368]
-            chroma = C2[x] * sin(a + 33.0 * M_PI / 180.0) + C1[x] * cos(a + 33.0 * M_PI / 180.0);
+            c1 = C2[x] * sin(a + 33.0 * M_PI / 180.0);
+            c2 = C1[x] * cos(a + 33.0 * M_PI / 180.0);
+            chroma = c1 + c2;
         }
 
         // Generate C output
         const double burstGate = raisedCosineGate(t, burstStartTime, burstEndTime, halfBurstRiseTime);
         const double chromaGate = raisedCosineGate(t, activeStartTime, activeEndTime, halfChromaRiseTime);
-        outputC[x] = (burst * burstGate)
-                     + qBound(-chromaGate, chroma, chromaGate);
+        if(outFormat == OUT_COMPONENT) {
+            //qDebug() << "output c1/c2";
+            outputC1[x] = (burst * burstGate)
+                      + qBound(-chromaGate, c1, chromaGate);
+            outputC2[x] = qBound(-chromaGate, c2, chromaGate); //fixme
+        } else {
+            //qDebug() << "output c1 only";
+            outputC1[x] = (burst * burstGate)
+                          + qBound(-chromaGate, chroma, chromaGate);
+        }
 
         // Generate VBS output
         const double lumaGate = raisedCosineGate(t, activeStartTime, activeEndTime, halfLumaRiseTime);

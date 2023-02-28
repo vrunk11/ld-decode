@@ -114,6 +114,10 @@ int main(int argc, char *argv[])
     parser.addPositionalArgument("chroma", QCoreApplication::translate("main", "Specify chroma output TBC file (optional)"),
                                  "[chroma]");
 
+    // Positional argument to specify second chroma output video file
+    parser.addPositionalArgument("chroma2", QCoreApplication::translate("main", "Specify chroma2 output TBC file (very optional)"),
+                                 "[chroma2]");
+
     // Process the command line options and arguments given by the user
     parser.process(a);
 
@@ -182,17 +186,24 @@ int main(int argc, char *argv[])
     }
 
     const bool scLocked = parser.isSet(scLockedOption);
+    OutputType outFormat = OUT_CVBS;
 
     // Get the arguments from the parser
     QString inputFileName;
     QString outputFileName;
     QString chromaFileName;
+    QString chroma2FileName;
     QStringList positionalArguments = parser.positionalArguments();
-    if (positionalArguments.count() == 2 || positionalArguments.count() == 3) {
+    if (positionalArguments.count() > 1 && positionalArguments.count() < 5) {
         inputFileName = positionalArguments.at(0);
         outputFileName = positionalArguments.at(1);
         if (positionalArguments.count() > 2) {
             chromaFileName = positionalArguments.at(2);
+            outFormat = OUT_CHROMA;
+        }
+        if (positionalArguments.count() > 3) {
+            chroma2FileName = positionalArguments.at(3);
+            outFormat = OUT_COMPONENT;
         }
     } else {
         // Quit with error
@@ -227,22 +238,27 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    // Open the chroma output file, if specified
+    // Open the chroma output file(s), if specified
     QFile chromaFile(chromaFileName);
     if (chromaFileName != "" && !chromaFile.open(QFile::WriteOnly)) {
         qCritical() << "Cannot open chroma output file:" << chromaFileName;
+        return -1;
+    }
+    QFile chroma2File(chroma2FileName);
+    if (chroma2FileName != "" && !chroma2File.open(QFile::WriteOnly)) {
+        qCritical() << "Cannot open chroma2 output file:" << chroma2FileName;
         return -1;
     }
 
     // Encode the data
     LdDecodeMetaData metaData;
     if (system == NTSC) {
-        NTSCEncoder encoder(inputFile, tbcFile, chromaFile, metaData, fieldOffset, isComponent, chromaMode, addSetup);
+        NTSCEncoder encoder(inputFile, tbcFile, chromaFile, chroma2File, metaData, fieldOffset, isComponent, outFormat, chromaMode, addSetup);
         if (!encoder.encode()) {
             return -1;
         }
     } else {
-        PALEncoder encoder(inputFile, tbcFile, chromaFile, metaData, fieldOffset, isComponent, scLocked);
+        PALEncoder encoder(inputFile, tbcFile, chromaFile, chroma2File, metaData, fieldOffset, isComponent, outFormat, scLocked);
         if (!encoder.encode()) {
             return -1;
         }
