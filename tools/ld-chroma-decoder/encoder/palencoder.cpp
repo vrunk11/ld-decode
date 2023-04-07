@@ -39,9 +39,9 @@
 #include <array>
 #include <cmath>
 
-PALEncoder::PALEncoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, LdDecodeMetaData &_metaData,
-                       int _fieldOffset, bool _isComponent, bool _scLocked)
-    : Encoder(_inputFile, _tbcFile, _chromaFile, _metaData, _fieldOffset, _isComponent), scLocked(_scLocked)
+PALEncoder::PALEncoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile,  QFile &_chroma2File, LdDecodeMetaData &_metaData,
+                       int _fieldOffset, bool _isComponent,  OutputType _outFormat, bool _scLocked)
+    : Encoder(_inputFile, _tbcFile, _chromaFile, _chroma2File, _metaData, _fieldOffset, _isComponent, _outFormat), scLocked(_scLocked)
 {
     // PAL subcarrier frequency [Poynton p529] [EBU p5]
     videoParameters.fSC = 4433618.75;
@@ -171,11 +171,13 @@ static constexpr std::array<double, 13> uvFilterCoeffs {
 static constexpr auto uvFilter = makeFIRFilter(uvFilterCoeffs);
 
 void PALEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *inputData,
-                            std::vector<double> &outputC, std::vector<double> &outputVBS)
+                            std::vector<double> &outputC1, std::vector<double> &outputC2,
+                            std::vector<double> &outputVBS)
 {
     if (frameLine == 625) {
         // Dummy last line, filled with black
-        std::fill(outputC.begin(), outputC.end(), 0.0);
+        std::fill(outputC1.begin(), outputC1.end(), 0.0);
+        std::fill(outputC2.begin(), outputC2.end(), 0.0);
         std::fill(outputVBS.begin(), outputVBS.end(), 0.0);
         return;
     }
@@ -306,13 +308,22 @@ void PALEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *inp
         const double burst = sin(a + burstOffset) * burstAmplitude / 2.0;
 
         // Encode the chroma signal [Poynton p338]
-        const double chroma = (U[x] * sin(a)) + (V[x] * cos(a) * Vsw);
+        const double c1 = U[x] * sin(a);
+        const double c2 = V[x] * cos(a) * Vsw;
+        const double chroma = c1 + c2;
 
         // Generate C output
         const double burstGate = raisedCosineGate(t, burstStartTime, burstEndTime, halfBurstRiseTime);
         const double chromaGate = raisedCosineGate(t, activeStartTime, activeEndTime, halfChromaRiseTime);
-        outputC[x] = (burst * burstGate)
-                     + qBound(-chromaGate, chroma, chromaGate);
+        if(outFormat == OUT_COMPONENT) {
+            outputC1[x] = (burst * burstGate)
+                      + qBound(-chromaGate, c1, chromaGate);
+            outputC2[x] = (burst * burstGate)
+                      + qBound(-chromaGate, c2, chromaGate);
+        } else {
+            outputC1[x] = (burst * burstGate)
+                          + qBound(-chromaGate, chroma, chromaGate);
+        }
 
         // Generate VBS output
         const double lumaGate = raisedCosineGate(t, activeStartTime, activeEndTime, halfLumaRiseTime);

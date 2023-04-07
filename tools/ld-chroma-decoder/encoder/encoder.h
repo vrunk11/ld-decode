@@ -60,6 +60,12 @@ enum SyncPulseType {
     BROAD
 };
 
+enum OutputType {
+    OUT_CVBS = 0,
+    OUT_CHROMA,
+    OUT_COMPONENT
+};
+
 class Encoder
 {
 public:
@@ -67,8 +73,8 @@ public:
     // This only sets the member variables it takes as parameters; subclasses
     // must initialise the VideoParameters, compute the active region and
     // resize inputFrame.
-    Encoder(QFile &inputFile, QFile &tbcFile, QFile &chromaFile, LdDecodeMetaData &metaData,
-            int fieldOffset, bool isComponent);
+    Encoder(QFile &inputFile, QFile &tbcFile, QFile &chromaFile, QFile &chroma2File, LdDecodeMetaData &metaData,
+            int fieldOffset, bool isComponent, OutputType outFormat);
 
     // Encode input RGB/YCbCr stream to TBC.
     // Returns true on success; on failure, prints an error and returns false.
@@ -85,18 +91,21 @@ protected:
     // outputC includes the chroma signal and burst.
     // outputVBS includes the luma signal, blanking and syncs.
     virtual void encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *inputData,
-                            std::vector<double> &outputC, std::vector<double> &outputVBS) = 0;
+                            std::vector<double> &outputC1, std::vector<double> &outputC2,
+                            std::vector<double> &outputVBS) = 0;
 
     // Scale and write a line of data to one of the output files.
     // Returns true on success; on failure, prints an error and returns false.
-    bool writeLine(const std::vector<double> &input, std::vector<quint16> &buffer, bool isChroma, QFile &file);
+    bool writeLine(const std::vector<double> &input, std::vector<quint16> &buffer, bool offsetChroma, QFile &file);
 
     QFile &inputFile;
     QFile &tbcFile;
     QFile &chromaFile;
+    QFile &chroma2File;
     LdDecodeMetaData &metaData;
     int fieldOffset;
     bool isComponent;
+    OutputType outFormat;
 
     LdDecodeMetaData::VideoParameters videoParameters;
     qint32 activeWidth;
