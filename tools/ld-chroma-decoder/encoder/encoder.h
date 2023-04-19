@@ -63,7 +63,8 @@ enum SyncPulseType {
 enum OutputType {
     OUT_CVBS = 0,
     OUT_CHROMA,
-    OUT_COMPONENT
+    OUT_COMPONENT,
+	OUT_SEPARATED
 };
 
 class Encoder
@@ -73,7 +74,7 @@ public:
     // This only sets the member variables it takes as parameters; subclasses
     // must initialise the VideoParameters, compute the active region and
     // resize inputFrame.
-    Encoder(QFile &inputFile, QFile &tbcFile, QFile &chromaFile, QFile &chroma2File, LdDecodeMetaData &metaData,
+    Encoder(QFile &inputFile, QFile &tbcFile, QFile &chromaFile, QFile &chroma2File, QFile &chroma3File, LdDecodeMetaData &metaData,
             int fieldOffset, bool isComponent, OutputType outFormat);
 
     // Encode input RGB/YCbCr stream to TBC.
@@ -91,7 +92,7 @@ protected:
     // outputC includes the chroma signal and burst.
     // outputVBS includes the luma signal, blanking and syncs.
     virtual void encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *inputData,
-                            std::vector<double> &outputC1, std::vector<double> &outputC2,
+                            std::vector<double> &outputC1, std::vector<double> &outputC2, std::vector<double> &outputC3,
                             std::vector<double> &outputVBS) = 0;
 
     // Scale and write a line of data to one of the output files.
@@ -102,6 +103,7 @@ protected:
     QFile &tbcFile;
     QFile &chromaFile;
     QFile &chroma2File;
+	QFile &chroma3File;
     LdDecodeMetaData &metaData;
     int fieldOffset;
     bool isComponent;

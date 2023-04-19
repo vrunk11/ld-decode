@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
 
     // Option to select chroma mode (--chroma-mode)
     QCommandLineOption chromaOption(QStringList() << "chroma-mode",
-                                     QCoreApplication::translate("main", "NTSC: Chroma encoder mode to use (wideband-yuv, wideband-yiq, narrowband-q; default: wideband-yuv)"),
+                                     QCoreApplication::translate("main", "Chroma encoder mode to use NTSC : (wideband-yuv, wideband-yiq, wideband-yuv-unmodulated, wideband-yiq-unmodulated, narrowband-q; default: wideband-yuv)\n PAL : (wideband-yuv, wideband-yuv-unmodulated; default: wideband-yuv)"),
                                      QCoreApplication::translate("main", "chroma-mode"));
     parser.addOption(chromaOption);
 
@@ -118,7 +118,11 @@ int main(int argc, char *argv[])
     parser.addPositionalArgument("chroma2", QCoreApplication::translate("main", "Specify chroma2 output TBC file (very optional)"),
                                  "[chroma2]");
 
-    // Process the command line options and arguments given by the user
+    // Positional argument to specify third chroma output video file
+    parser.addPositionalArgument("chroma3", QCoreApplication::translate("main", "Specify chroma3 output TBC file (modulated Y/C) (not affected by 'unmodulated' chroma mode)"),
+                                 "[chroma3]");
+
+	// Process the command line options and arguments given by the user
     parser.process(a);
 
     // Standard logging options
@@ -168,21 +172,43 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    ChromaMode chromaMode = WIDEBAND_YUV;
+	// set how to encode chroma
+    NTSCChromaMode ntscChromaMode = N_WIDEBAND_YUV;
+	PALChromaMode palChromaMode = P_WIDEBAND_YUV;
     QString chromaName;
     if (parser.isSet(chromaOption)) {
         chromaName = parser.value(chromaOption);
-        if (chromaName == "wideband-yiq") {
-            chromaMode = WIDEBAND_YIQ;
-        } else if (chromaName == "narrowband-q") {
-            chromaMode = NARROWBAND_Q;
-        } else if (chromaName == "wideband-yuv") {
-            chromaMode = WIDEBAND_YUV;
-        } else {
-            // Quit with error
-            qCritical("Unsupported chroma encoder mode");
-            return -1;
-        }
+		if (system == NTSC)
+		{
+			if (chromaName == "wideband-yiq") {
+				ntscChromaMode = N_WIDEBAND_YIQ;
+			} else if (chromaName == "narrowband-q") {
+				ntscChromaMode = N_NARROWBAND_Q;
+			} else if (chromaName == "wideband-yuv") {
+				ntscChromaMode = N_WIDEBAND_YUV;
+			} else if (chromaName == "wideband-yuv-unmodulated") {
+				ntscChromaMode = N_WIDEBAND_YUV_UNMODULATED;
+			} else if (chromaName == "wideband-yiq-unmodulated") {
+				ntscChromaMode = N_WIDEBAND_YIQ_UNMODULATED;
+			} else {
+				// Quit with error
+				qCritical("Unsupported chroma encoder mode");
+				return -1;
+			}
+		}
+		else
+		{
+			if (chromaName == "wideband-yuv") {
+				palChromaMode = P_WIDEBAND_YUV;
+			} else if (chromaName == "wideband-yuv-unmodulated") {
+				palChromaMode = P_WIDEBAND_YUV_UNMODULATED;
+			}
+			else {
+				// Quit with error
+				qCritical("Unsupported chroma encoder mode");
+				return -1;
+			}	
+		}
     }
 
     const bool scLocked = parser.isSet(scLockedOption);
@@ -193,8 +219,9 @@ int main(int argc, char *argv[])
     QString outputFileName;
     QString chromaFileName;
     QString chroma2FileName;
+	QString chroma3FileName;
     QStringList positionalArguments = parser.positionalArguments();
-    if (positionalArguments.count() > 1 && positionalArguments.count() < 5) {
+    if (positionalArguments.count() > 1 && positionalArguments.count() < 6) {
         inputFileName = positionalArguments.at(0);
         outputFileName = positionalArguments.at(1);
         if (positionalArguments.count() > 2) {
@@ -204,6 +231,10 @@ int main(int argc, char *argv[])
         if (positionalArguments.count() > 3) {
             chroma2FileName = positionalArguments.at(3);
             outFormat = OUT_COMPONENT;
+        }
+		if (positionalArguments.count() > 4) {
+            chroma3FileName = positionalArguments.at(4);
+            outFormat = OUT_SEPARATED;
         }
     } else {
         // Quit with error
@@ -249,16 +280,21 @@ int main(int argc, char *argv[])
         qCritical() << "Cannot open chroma2 output file:" << chroma2FileName;
         return -1;
     }
+	QFile chroma3File(chroma3FileName);
+    if (chroma3FileName != "" && !chroma3File.open(QFile::WriteOnly)) {
+        qCritical() << "Cannot open chroma3 output file:" << chroma3FileName;
+        return -1;
+    }
 
     // Encode the data
     LdDecodeMetaData metaData;
     if (system == NTSC) {
-        NTSCEncoder encoder(inputFile, tbcFile, chromaFile, chroma2File, metaData, fieldOffset, isComponent, outFormat, chromaMode, addSetup);
+        NTSCEncoder encoder(inputFile, tbcFile, chromaFile, chroma2File, chroma3File, metaData, fieldOffset, isComponent, outFormat, ntscChromaMode, addSetup);
         if (!encoder.encode()) {
             return -1;
         }
     } else {
-        PALEncoder encoder(inputFile, tbcFile, chromaFile, chroma2File, metaData, fieldOffset, isComponent, outFormat, scLocked);
+        PALEncoder encoder(inputFile, tbcFile, chromaFile, chroma2File, chroma3File, metaData, fieldOffset, isComponent, outFormat, palChromaMode, scLocked);
         if (!encoder.encode()) {
             return -1;
         }

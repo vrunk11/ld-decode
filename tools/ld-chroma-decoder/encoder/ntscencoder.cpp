@@ -40,9 +40,9 @@
 #include <array>
 #include <cmath>
 
-NTSCEncoder::NTSCEncoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, QFile &_chroma2File, LdDecodeMetaData &_metaData,
-                         int _fieldOffset, bool _isComponent, OutputType _outFormat, ChromaMode _chromaMode, bool _addSetup)
-    : Encoder(_inputFile, _tbcFile, _chromaFile, _chroma2File, _metaData, _fieldOffset, _isComponent, _outFormat),
+NTSCEncoder::NTSCEncoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, QFile &_chroma2File, QFile &_chroma3File, LdDecodeMetaData &_metaData,
+                         int _fieldOffset, bool _isComponent, OutputType _outFormat, NTSCChromaMode _chromaMode, bool _addSetup)
+    : Encoder(_inputFile, _tbcFile, _chromaFile, _chroma2File, _chroma3File, _metaData, _fieldOffset, _isComponent, _outFormat),
       chromaMode(_chromaMode), addSetup(_addSetup)
 {
     // NTSC subcarrier frequency [Poynton p511]
@@ -167,13 +167,14 @@ static const double SIN_33 = sin(33.0 * M_PI / 180.0);
 static const double COS_33 = cos(33.0 * M_PI / 180.0);
 
 void NTSCEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *inputData,
-                             std::vector<double> &outputC1, std::vector<double> &outputC2,
+                             std::vector<double> &outputC1, std::vector<double> &outputC2, std::vector<double> &outputC3,
                              std::vector<double> &outputVBS)
 {
     if (frameLine == 525) {
         // Dummy last line, filled with blanking
         std::fill(outputC1.begin(), outputC1.end(), 0.0);
         std::fill(outputC2.begin(), outputC2.end(), 0.0);
+		std::fill(outputC3.begin(), outputC3.end(), 0.0);
         const double blanking = (static_cast<double>(blankingIre) - videoParameters.black16bIre)
                                 / (videoParameters.white16bIre - videoParameters.black16bIre);
         std::fill(outputVBS.begin(), outputVBS.end(), blanking);
@@ -268,7 +269,7 @@ void NTSCEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *in
                 Y[x] = (inputData[i] - Y_ZERO) / Y_SCALE;
                 const double U    = (inputData[i + stride    ] - C_ZERO) * cbScale;
                 const double V    = (inputData[i + stride * 2] - C_ZERO) * crScale;
-                if (chromaMode == WIDEBAND_YUV) {
+                if (chromaMode == N_WIDEBAND_YUV || chromaMode == N_WIDEBAND_YUV_UNMODULATED) {
                     C1[x] = U;
                     C2[x] = V;
                 } else {
@@ -285,7 +286,7 @@ void NTSCEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *in
                 const double B = inputData[(i * 3) + 2] / 65535.0;
                 qint32 x = activeLeft + i;
                 Y[x] = (R * 0.299)    + (G * 0.587)     + (B * 0.114);
-                if (chromaMode == WIDEBAND_YUV) {
+                if (chromaMode == N_WIDEBAND_YUV || chromaMode == N_WIDEBAND_YUV_UNMODULATED) {
                     // Y'UV [Poynton p337 eq 28.5]
                     C1[x] = (R * -0.147141) + (G * -0.288869) + (B * 0.436010);
                     C2[x] = (R * 0.614975)  + (G * -0.514965) + (B * -0.100010);
@@ -299,7 +300,7 @@ void NTSCEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *in
 
         // Low-pass filter chroma components to 1.3 MHz [Poynton p342]
         uvFilter.apply(C1);
-        if (chromaMode == NARROWBAND_Q) {
+        if (chromaMode == N_NARROWBAND_Q) {
             qFilter.apply(C2);
         } else {
             uvFilter.apply(C2);
@@ -316,14 +317,27 @@ void NTSCEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *in
 
         // Encode the chroma signal
         double chroma, c1, c2;
-        if (chromaMode == WIDEBAND_YUV) {
+        if (chromaMode == N_WIDEBAND_YUV) {
             // Y'UV [Poynton p338]
             //chroma = C1[x] * sin(a) + C2[x] * cos(a);
             c1 = C1[x] * sin(a);
             c2 = C2[x] * cos(a);
             chroma = c1 + c2;
             //qInfo() << chroma-chroma2;
-        } else {
+        }
+		else if(chromaMode == N_WIDEBAND_YUV_UNMODULATED) {
+            // Y'UV [Poynton p338]
+            c1 = C1[x];// + 32768;
+            c2 = C2[x];// + 32768;
+            chroma = C1[x] * sin(a) + C2[x] * cos(a);
+        }
+		else if(chromaMode == N_WIDEBAND_YIQ_UNMODULATED) {
+            // Y'UV [Poynton p338]
+            c1 = C1[x];// + 32768;
+            c2 = C2[x];// + 32768;
+            chroma = c1 * sin(a + 33.0 * M_PI / 180.0) + c2 * cos(a + 33.0 * M_PI / 180.0);
+        }
+		else {
             // Y'IQ [Poynton p368]
             c1 = C2[x] * sin(a + 33.0 * M_PI / 180.0);
             c2 = C1[x] * cos(a + 33.0 * M_PI / 180.0);
@@ -338,7 +352,15 @@ void NTSCEncoder::encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *in
             outputC1[x] = (burst * burstGate)
                       + qBound(-chromaGate, c1, chromaGate);
             outputC2[x] = qBound(-chromaGate, c2, chromaGate); //fixme
-        } else {
+        }
+		else if(outFormat == OUT_SEPARATED) {
+            //qDebug() << "output c1/c2/c3";
+            outputC1[x] = c1;//qBound(-chromaGate, c1, chromaGate);
+            outputC2[x] = c2;//qBound(-chromaGate, c2, chromaGate);
+			outputC3[x] = (burst * burstGate)
+                     + qBound(-chromaGate, chroma, chromaGate);
+        }
+		else {
             //qDebug() << "output c1 only";
             outputC1[x] = (burst * burstGate)
                           + qBound(-chromaGate, chroma, chromaGate);

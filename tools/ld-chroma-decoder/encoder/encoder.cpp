@@ -48,9 +48,9 @@
 
 #include "encoder.h"
 
-Encoder::Encoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, QFile &_chroma2File, LdDecodeMetaData &_metaData,
+Encoder::Encoder(QFile &_inputFile, QFile &_tbcFile, QFile &_chromaFile, QFile &_chroma2File, QFile &_chroma3File, LdDecodeMetaData &_metaData,
                  int _fieldOffset, bool _isComponent, OutputType _outFormat)
-    : inputFile(_inputFile), tbcFile(_tbcFile), chromaFile(_chromaFile), chroma2File(_chroma2File), metaData(_metaData),
+    : inputFile(_inputFile), tbcFile(_tbcFile), chromaFile(_chromaFile), chroma2File(_chroma2File), chroma3File(_chroma3File), metaData(_metaData),
       fieldOffset(_fieldOffset), isComponent(_isComponent), outFormat(_outFormat)
 {
 }
@@ -120,6 +120,7 @@ bool Encoder::encodeField(qint32 fieldNo)
     // Output from the encoder
     std::vector<double> outputC1(videoParameters.fieldWidth);
     std::vector<double> outputC2(videoParameters.fieldWidth);
+	std::vector<double> outputC3(videoParameters.fieldWidth);
     std::vector<double> outputVBS(videoParameters.fieldWidth);
 
     // Buffer for conversion
@@ -140,18 +141,27 @@ bool Encoder::encodeField(qint32 fieldNo)
                 inputData = reinterpret_cast<const quint16 *>(inputFrame.data()) + ((frameLine - activeTop) * activeWidth * 3);
             }
         }
-        encodeLine(fieldNo, frameLine, inputData, outputC1, outputC2, outputVBS);
+        encodeLine(fieldNo, frameLine, inputData, outputC1, outputC2, outputC3, outputVBS);
 
         if (outFormat == OUT_CHROMA) {
             // Write C and VBS to separate output files
             if (!writeLine(outputC1, outputBuffer, true, chromaFile)) return false;
             if (!writeLine(outputVBS, outputBuffer, false, tbcFile)) return false;
-        } else if(outFormat == OUT_COMPONENT) {
+        }
+		else if(outFormat == OUT_COMPONENT) {
             // Write VBS, U/I, and V/Q to separate output file
             if (!writeLine(outputC1, outputBuffer, true, chromaFile)) return false;
             if (!writeLine(outputC2, outputBuffer, true, chroma2File)) return false;
             if (!writeLine(outputVBS, outputBuffer, false, tbcFile)) return false;
-        }else {
+        }
+		else if(outFormat == OUT_SEPARATED) {
+            // Write VBS, U/I, V/Q, and C to separate output file
+            if (!writeLine(outputC1, outputBuffer, true, chromaFile)) return false;
+            if (!writeLine(outputC2, outputBuffer, true, chroma2File)) return false;
+			if (!writeLine(outputC3, outputBuffer, true, chroma3File)) return false;
+            if (!writeLine(outputVBS, outputBuffer, false, tbcFile)) return false;
+        }
+		else {
             // Combine C and VBS into a single output file
             for (qint32 x = 0; x < videoParameters.fieldWidth; x++) {
                 outputVBS[x] += outputC1[x];

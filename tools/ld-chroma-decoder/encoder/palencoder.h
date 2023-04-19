@@ -32,19 +32,25 @@
 
 #include "encoder.h"
 
+enum PALChromaMode {
+    P_WIDEBAND_YUV = 0,   	 // Y'UV
+	P_WIDEBAND_YUV_UNMODULATED,  // Y'UV without subcarier
+};
+
 class PALEncoder : public Encoder
 {
 public:
-    PALEncoder(QFile &inputFile, QFile &tbcFile, QFile &chromaFile, QFile &chroma2File, LdDecodeMetaData &metaData,
-               int fieldOffset, bool isComponent, OutputType outFormat, bool scLocked);
+    PALEncoder(QFile &inputFile, QFile &tbcFile, QFile &chromaFile, QFile &chroma2File, QFile &chroma3File, LdDecodeMetaData &metaData,
+               int fieldOffset, bool isComponent, OutputType outFormat, PALChromaMode chromaMode, bool scLocked);
 
 private:
     virtual void getFieldMetadata(qint32 fieldNo, LdDecodeMetaData::Field &fieldData);
     virtual void encodeLine(qint32 fieldNo, qint32 frameLine, const quint16 *inputData,
-                            std::vector<double> &outputC1, std::vector<double> &outputC2,
+                            std::vector<double> &outputC1, std::vector<double> &outputC2, std::vector<double> &outputC3,
                             std::vector<double> &outputVBS);
 
-    bool scLocked;
+    PALChromaMode chromaMode;
+	bool scLocked;
 
     std::vector<double> Y;
     std::vector<double> U;
