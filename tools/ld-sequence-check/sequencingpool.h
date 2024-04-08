@@ -93,14 +93,8 @@ private:
     QVector<qint32> sourceMinimumVbiFrame;
     QVector<qint32> sourceMaximumVbiFrame;
 
-    bool setMinAndMaxVbiFrames();
-    qint32 convertSequentialFrameNumberToVbi(qint32 sequentialFrameNumber, qint32 sourceNumber);
-    qint32 convertVbiFrameNumberToSequential(qint32 vbiFrameNumber, qint32 sourceNumber);
     QVector<qint32> getAvailableSourcesForFrame(qint32 vbiFrameNumber);
     bool writeOutputField(const SourceVideo::Data &fieldData);
-    void correctPhaseIDs();
-    template<int field>
-    void replaceFieldMetaData(qint32 frameNumber);
     LdDecodeMetaData &correctMetaData();
 };
 

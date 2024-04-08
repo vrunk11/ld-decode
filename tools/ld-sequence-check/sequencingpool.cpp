@@ -89,7 +89,7 @@ bool SequencingPool::process()
                lastFrameNumber / totalSecs << "FPS )";
 
     qInfo() << "Creating JSON metadata file for analysed TBC...";
-    //correctMetaData().write(outputJsonFilename);
+    correctMetaData().write(outputJsonFilename);
 
     // Close the target video
     targetVideo.close();
@@ -132,80 +132,37 @@ bool SequencingPool::getInputFrame(qint32& frameNumber,
     secondFieldVideoData.resize(numberOfSources);
     secondFieldMetadata.resize(numberOfSources);
     videoParameters.resize(numberOfSources);
-    // Get the current VBI frame number based on the first source
-    qint32 currentVbiFrame = -1;
-    if (numberOfSources > 1) currentVbiFrame = 0;//convertSequentialFrameNumberToVbi(frameNumber, 0);
-	qInfo() << "(sequencing pool) test1";
+	
     for (qint32 sourceNo = 0; sourceNo < numberOfSources; sourceNo++) {
         // Determine the fields for the input frame
-        firstFieldNumber[sourceNo] = -1;
-        secondFieldNumber[sourceNo] = -1;
-	qInfo() << "(sequencing pool) test2";
-        if (sourceNo == 0) {
-            // No need to perform VBI frame number mapping on the first source
-            firstFieldNumber[sourceNo] = ldDecodeMetaData[sourceNo]->getFirstFieldNumber(frameNumber);
-            secondFieldNumber[sourceNo] = ldDecodeMetaData[sourceNo]->getSecondFieldNumber(frameNumber);
-            qDebug().nospace() << "Source #0 fields are " <<
-                                  firstFieldNumber[sourceNo] << "/" << secondFieldNumber[sourceNo];
-        } else if (currentVbiFrame >= 0){//sourceMinimumVbiFrame[sourceNo] && currentVbiFrame <= sourceMaximumVbiFrame[sourceNo]) {
-            // Use VBI frame number mapping to get the same frame from the
-            // current additional source
-			qInfo() << "(sequencing pool) test3";
-            qint32 currentSourceFrameNumber = 0;//convertVbiFrameNumberToSequential(currentVbiFrame, sourceNo);
-
-            // Check the current source contains the frame
-            if (ldDecodeMetaData[sourceNo]->getNumberOfFrames() < currentSourceFrameNumber) {
-                firstFieldNumber[sourceNo] = -1;
-                secondFieldNumber[sourceNo] = -1;
-
-                qDebug().nospace() << "Source #" << sourceNo << " does not contain VBI frame number " << currentVbiFrame;
-            } else {
-                firstFieldNumber[sourceNo] = ldDecodeMetaData[sourceNo]->getFirstFieldNumber(currentSourceFrameNumber);
-                secondFieldNumber[sourceNo] = ldDecodeMetaData[sourceNo]->getSecondFieldNumber(currentSourceFrameNumber);
-
-                qDebug().nospace() << "Source #" << sourceNo << " has VBI frame number " << currentVbiFrame <<
-                            " and fields " << firstFieldNumber[sourceNo] << "/" << secondFieldNumber[sourceNo];
-            }
+        firstFieldNumber[sourceNo] = (frameNumber * 2) -1;
+        secondFieldNumber[sourceNo] = (frameNumber * 2);
+		
+        // Fetch the input data (get the fields in TBC sequence order to save seeking)
+        if (firstFieldNumber[sourceNo] < secondFieldNumber[sourceNo]) {
+            firstFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(firstFieldNumber[sourceNo]);
+            secondFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(secondFieldNumber[sourceNo]);
         } else {
-            qDebug().nospace() << "Source #" << sourceNo << " does not contain a usable frame";
+            secondFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(secondFieldNumber[sourceNo]);
+            firstFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(firstFieldNumber[sourceNo]);
         }
-	qInfo() << "(sequencing pool) test4";
-        // If the field numbers are valid - get the rest of the required data
-        if (firstFieldNumber[sourceNo] != -1 && secondFieldNumber[sourceNo] != -1) {
-            // Fetch the input data (get the fields in TBC sequence order to save seeking)
-            if (firstFieldNumber[sourceNo] < secondFieldNumber[sourceNo]) {
-                firstFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(firstFieldNumber[sourceNo]);
-                secondFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(secondFieldNumber[sourceNo]);
-            } else {
-                secondFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(secondFieldNumber[sourceNo]);
-                firstFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(firstFieldNumber[sourceNo]);
-            }
 
-            firstFieldMetadata[sourceNo] = ldDecodeMetaData[sourceNo]->getField(firstFieldNumber[sourceNo]);
-            secondFieldMetadata[sourceNo] = ldDecodeMetaData[sourceNo]->getField(secondFieldNumber[sourceNo]);
-            videoParameters[sourceNo] = ldDecodeMetaData[sourceNo]->getVideoParameters();
-        }
-		qInfo() << "(sequencing pool) test5";
+        firstFieldMetadata[sourceNo] = ldDecodeMetaData[sourceNo]->getField(firstFieldNumber[sourceNo]);
+        secondFieldMetadata[sourceNo] = ldDecodeMetaData[sourceNo]->getField(secondFieldNumber[sourceNo]);
+        videoParameters[sourceNo] = ldDecodeMetaData[sourceNo]->getVideoParameters();
     }
-	qInfo() << "(sequencing pool) test6";
 
     // Figure out which of the available sources can be used to correct the current frame
     availableSourcesForFrame.clear();
-	qInfo() << "(sequencing pool) test7";
     if (numberOfSources > 1) {
-		qInfo() << "(sequencing pool) test8.1";
-        availableSourcesForFrame = getAvailableSourcesForFrame(1);//getAvailableSourcesForFrame(currentVbiFrame);
-		qInfo() << "(sequencing pool) test9.1";
+        availableSourcesForFrame = getAvailableSourcesForFrame(frameNumber);//getAvailableSourcesForFrame(currentVbiFrame);
     } else {
-		qInfo() << "(sequencing pool) test8.2";
         availableSourcesForFrame.append(0);
-		qInfo() << "(sequencing pool) test9.2";
     }
 
     // Set the other miscellaneous parameters
     _reverse = reverse;
-	qInfo() << "(sequencing pool) get input frame end";
-
+	
     return true;
 }
 
@@ -270,109 +227,6 @@ bool SequencingPool::setOutputFrame(qint32 frameNumber,
     return true;
 }
 
-// Determine the minimum and maximum VBI frame numbers for all sources
-// Expects sourceVideos[] and ldDecodeMetaData[] to be populated
-// Note: This function returns frame number even if the disc is CLV - conversion
-// from timecodes is performed automatically.
-bool SequencingPool::setMinAndMaxVbiFrames()
-{
-    // Determine the number of sources available
-    qint32 numberOfSources = sourceVideos.size();
-
-    // Resize vectors
-    sourceDiscTypeCav.resize(numberOfSources);
-    sourceMaximumVbiFrame.resize(numberOfSources);
-    sourceMinimumVbiFrame.resize(numberOfSources);
-
-    for (qint32 sourceNumber = 0; sourceNumber < numberOfSources; sourceNumber++) {
-        // Determine the disc type and max/min VBI frame numbers
-        VbiDecoder vbiDecoder;
-        qint32 cavCount = 0;
-        qint32 clvCount = 0;
-        qint32 cavMin = 1000000;
-        qint32 cavMax = 0;
-        qint32 clvMin = 1000000;
-        qint32 clvMax = 0;
-
-        sourceMinimumVbiFrame[sourceNumber] = 0;
-        sourceMaximumVbiFrame[sourceNumber] = 0;
-        sourceDiscTypeCav[sourceNumber] = false;
-
-        // Using sequential frame numbering starting from 1
-        for (qint32 seqFrame = 1; seqFrame <= ldDecodeMetaData[sourceNumber]->getNumberOfFrames(); seqFrame++) {
-            // Get the VBI data and then decode
-            auto vbi1 = ldDecodeMetaData[sourceNumber]->getFieldVbi(ldDecodeMetaData[sourceNumber]->getFirstFieldNumber(seqFrame)).vbiData;
-            auto vbi2 = ldDecodeMetaData[sourceNumber]->getFieldVbi(ldDecodeMetaData[sourceNumber]->getSecondFieldNumber(seqFrame)).vbiData;
-            VbiDecoder::Vbi vbi = vbiDecoder.decodeFrame(vbi1[0], vbi1[1], vbi1[2], vbi2[0], vbi2[1], vbi2[2]);
-
-            // Look for a complete, valid CAV picture number or CLV time-code
-            if (vbi.picNo > 0) {
-                cavCount++;
-
-                if (vbi.picNo < cavMin) cavMin = vbi.picNo;
-                if (vbi.picNo > cavMax) cavMax = vbi.picNo;
-            }
-
-            if (vbi.clvHr != -1 && vbi.clvMin != -1 &&
-                    vbi.clvSec != -1 && vbi.clvPicNo != -1) {
-                clvCount++;
-
-                LdDecodeMetaData::ClvTimecode timecode;
-                timecode.hours = vbi.clvHr;
-                timecode.minutes = vbi.clvMin;
-                timecode.seconds = vbi.clvSec;
-                timecode.pictureNumber = vbi.clvPicNo;
-                qint32 cvFrameNumber = ldDecodeMetaData[sourceNumber]->convertClvTimecodeToFrameNumber(timecode);
-
-                if (cvFrameNumber < clvMin) clvMin = cvFrameNumber;
-                if (cvFrameNumber > clvMax) clvMax = cvFrameNumber;
-            }
-        }
-        qDebug() << "SequencingPool::setMinAndMaxVbiFrames(): Got" << cavCount << "CAV picture codes and" << clvCount << "CLV timecodes";
-
-        // If the metadata has no picture numbers or time-codes, we cannot use the source
-        if (cavCount == 0 && clvCount == 0) {
-            qDebug() << "SequencingPool::setMinAndMaxVbiFrames(): Source does not seem to contain valid CAV picture numbers or CLV time-codes - cannot process";
-            return false;
-        }
-
-        // Determine disc type
-        if (cavCount > clvCount) {
-            sourceDiscTypeCav[sourceNumber] = true;
-            qDebug() << "SequencingPool::setMinAndMaxVbiFrames(): Got" << cavCount << "valid CAV picture numbers - source disc type is CAV";
-            qInfo().nospace() << "Source #" << sourceNumber << " has a disc type of CAV (uses VBI frame numbers)";
-
-            sourceMaximumVbiFrame[sourceNumber] = cavMax;
-            sourceMinimumVbiFrame[sourceNumber] = cavMin;
-        } else {
-            sourceDiscTypeCav[sourceNumber] = false;
-            qDebug() << "SequencingPool::setMinAndMaxVbiFrames(): Got" << clvCount << "valid CLV picture numbers - source disc type is CLV";
-            qInfo().nospace() << "Source #" << sourceNumber << " has a disc type of CLV (uses VBI time codes)";
-
-            sourceMaximumVbiFrame[sourceNumber] = clvMax;
-            sourceMinimumVbiFrame[sourceNumber] = clvMin;
-        }
-
-        qInfo().nospace() << "Source #" << sourceNumber << " has a VBI frame number range of " << sourceMinimumVbiFrame[sourceNumber] << " to " <<
-            sourceMaximumVbiFrame[sourceNumber];
-    }
-
-    return true;
-}
-
-// Method to convert the first source sequential frame number to a VBI frame number
-qint32 SequencingPool::convertSequentialFrameNumberToVbi(qint32 sequentialFrameNumber, qint32 sourceNumber)
-{
-    return (sourceMinimumVbiFrame[sourceNumber] - 1) + sequentialFrameNumber;
-}
-
-// Method to convert a VBI frame number to a sequential frame number
-qint32 SequencingPool::convertVbiFrameNumberToSequential(qint32 vbiFrameNumber, qint32 sourceNumber)
-{
-    // Offset the VBI frame number to get the sequential source frame number
-    return vbiFrameNumber - sourceMinimumVbiFrame[sourceNumber] + 1;
-}
-
 // Method that returns a vector of the sources that contain data for the required VBI frame number
 QVector<qint32> SequencingPool::getAvailableSourcesForFrame(qint32 vbiFrameNumber)
 {
@@ -421,87 +275,7 @@ bool SequencingPool::writeOutputField(const SourceVideo::Data &fieldData)
     return targetVideo.write(reinterpret_cast<const char *>(fieldData.data()), 2 * fieldData.size());
 }
 
-void SequencingPool::correctPhaseIDs()
-{
-    constexpr qint32 PHASE_COUNT = 4;
-
-    const qint32 fieldCount = ldDecodeMetaData[0]->getNumberOfFields();
-
-    // Find the first non-padded field
-    qint32 pivotField = 1;
-    while (pivotField <= fieldCount && ldDecodeMetaData[0]->getField(pivotField).pad) {
-        ++pivotField;
-    }
-    if (pivotField >= fieldCount)
-    {
-        return;
-    }
-
-    // Get the starting phase ID - 1
-    qint32 currentPhaseID = ldDecodeMetaData[0]->getField(pivotField).fieldPhaseID - 1;
-    currentPhaseID -= (pivotField - 1) % PHASE_COUNT;
-    currentPhaseID += PHASE_COUNT;
-    currentPhaseID %= PHASE_COUNT;
-
-    // Overwrite phase IDs
-    for (qint32 fieldNumber = 1; fieldNumber <= fieldCount; ++fieldNumber)
-    {
-        LdDecodeMetaData::Field field = ldDecodeMetaData[0]->getField(fieldNumber);
-        field.fieldPhaseID = currentPhaseID + 1;
-        ldDecodeMetaData[0]->updateField(field, fieldNumber);
-        ++currentPhaseID;
-        currentPhaseID %= PHASE_COUNT;
-    }
-}
-
-template<int field>
-void SequencingPool::replaceFieldMetaData(qint32 frameNumber)
-{
-    const qint32 currentVbiFrame = convertSequentialFrameNumberToVbi(frameNumber, 0);
-
-    qint32 fieldNumber = 0;
-    if constexpr (field == 1) {
-        fieldNumber = ldDecodeMetaData[0]->getFirstFieldNumber(frameNumber);
-    } else {
-        fieldNumber = ldDecodeMetaData[0]->getSecondFieldNumber(frameNumber);
-    }
-
-    const LdDecodeMetaData::Field &currentField = ldDecodeMetaData[0]->getField(fieldNumber);
-    if (currentField.pad) {
-        for (int sourceNo = 1; sourceNo < ldDecodeMetaData.size(); ++sourceNo) {
-            if (currentVbiFrame < sourceMinimumVbiFrame[sourceNo] || currentVbiFrame > sourceMaximumVbiFrame[sourceNo]) {
-                continue;
-            }
-            const qint32 currentSourceFrameNumber = convertVbiFrameNumberToSequential(currentVbiFrame, sourceNo);
-            if (ldDecodeMetaData[sourceNo]->getNumberOfFrames() < currentSourceFrameNumber) {
-                continue;
-            }
-            qint32 otherFieldNumber = 0;
-            if constexpr (field == 1) {
-                otherFieldNumber = ldDecodeMetaData[sourceNo]->getFirstFieldNumber(frameNumber);
-            } else {
-                otherFieldNumber = ldDecodeMetaData[sourceNo]->getSecondFieldNumber(frameNumber);
-            }
-            if (ldDecodeMetaData[sourceNo]->getField(otherFieldNumber).pad) {
-                continue;
-            }
-            LdDecodeMetaData::Field potentialField = ldDecodeMetaData[sourceNo]->getField(otherFieldNumber);
-            potentialField.seqNo = currentField.seqNo;
-            potentialField.fieldPhaseID = currentField.fieldPhaseID;
-            potentialField.dropOuts = currentField.dropOuts;
-            ldDecodeMetaData[0]->updateField(potentialField, fieldNumber);
-            break;
-        }
-    }
-}
-
 LdDecodeMetaData &SequencingPool::correctMetaData()
 {
-    correctPhaseIDs();
-    const qint32 frameCount = ldDecodeMetaData[0]->getNumberOfFrames();
-    for (qint32 frameNumber = 1; frameNumber <= frameCount; ++frameNumber) {
-        replaceFieldMetaData<1>(frameNumber);
-        replaceFieldMetaData<2>(frameNumber);
-    }
     return *ldDecodeMetaData[0];
 }

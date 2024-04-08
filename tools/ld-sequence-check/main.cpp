@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
     setBinaryMode();
     // Install the local debug message handler
     setDebug(true);
-    qInstallMessageHandler(debugOutputHandler);
+    //qInstallMessageHandler(debugOutputHandler);
 
     QCoreApplication a(argc, argv);
 
