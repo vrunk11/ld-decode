@@ -128,6 +128,7 @@ add_subdirectory(tools/ld-process-ac3)
 add_subdirectory(tools/ld-process-efm)
 add_subdirectory(tools/ld-process-vbi)
 add_subdirectory(tools/ld-process-vits)
+add_subdirectory(tools/ld-sequence-check)
 add_subdirectory(tools/library)
 
 if(BUILD_TESTING)
