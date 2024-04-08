@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
     }
 
     // Get the input TBC sources
-    if (positionalArguments.count() >= 3) {
+    if (positionalArguments.count() >= 2) {
         // Resize the input filenames vector according to the number of input files supplied
         inputFilenames.resize(totalNumberOfInputFiles);
 
@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
         }
     } else {
         // Quit with error
-        qCritical("You must specify at least 2 input and 1 output TBC file");
+        qCritical("You must specify at least 1 input and 1 output TBC file");
         return -1;
     }
 
