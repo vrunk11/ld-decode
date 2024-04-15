@@ -44,6 +44,8 @@ public:
 
 protected:
     void run() override;
+	int generate24BitCode(const int isCav,int frameNumber);
+	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,int bitCode,const LdDecodeMetaData::VideoParameters& videoParameters);
 
 private:
     // Sequencing pool
