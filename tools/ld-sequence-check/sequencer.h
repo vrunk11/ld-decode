@@ -43,9 +43,18 @@ public:
     explicit Sequencer(QAtomicInt& _abort, SequencingPool& _sequencingPool, QObject *parent = nullptr);
 
 protected:
+	//data used for 24 bit manchester encoding
+	struct VbiData {
+        bool dataL16[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        bool dataL16F2[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        bool dataL17[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        bool dataL17F2[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        bool dataL18[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        bool dataL18F2[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    };
     void run() override;
-	int generate24BitCode(const int isCav,int frameNumber);
-	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,int bitCode,const LdDecodeMetaData::VideoParameters& videoParameters);
+	int generate24BitCode(VbiData* vbiData,int frameNumber,bool isCav,bool isPal);
+	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData *bitCode,bool isCav,const LdDecodeMetaData::VideoParameters& videoParameters);
 
 private:
     // Sequencing pool
