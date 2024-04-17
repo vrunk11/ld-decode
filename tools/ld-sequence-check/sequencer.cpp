@@ -46,16 +46,20 @@ void Sequencer::run()
 	bool isCav = 0;
 	VbiData vbiData;
 	
+	sequencingPool.getParameters(reverse,isCav);
+	
     while(!abort) {
         // Get the next field to process from the input file
         if (!sequencingPool.getInputFrame(frameNumber, firstFieldSeqNo, firstSourceField, firstFieldMetadata,
                                        secondFieldSeqNo, secondSourceField, secondFieldMetadata,
-                                       videoParameters, reverse, availableSourcesForFrame)) {
+                                       videoParameters, availableSourcesForFrame)) {
             // No more input fields -- exit
 			qInfo() << "(Sequencer) end of TBC...";
             break;
         }
+		//get video standard
 		isPal = (videoParameters[0].system == PAL) ? 1 : 0 ;
+		
         // Initialise the output fields and process sources to output
         SourceVideo::Data outputFirstField(firstSourceField[0].size());
         SourceVideo::Data outputSecondField(secondSourceField[0].size());

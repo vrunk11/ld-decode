@@ -27,9 +27,9 @@
 
 SequencingPool::SequencingPool(QString _outputFilename, QString _outputJsonFilename,
                              qint32 _maxThreads, QVector<LdDecodeMetaData *> &_ldDecodeMetaData, QVector<SourceVideo *> &_sourceVideos,
-                             bool _reverse, QObject *parent)
+                             bool _isCav, bool _reverse, QObject *parent)
     : QObject(parent), outputFilename(_outputFilename), outputJsonFilename(_outputJsonFilename),
-      maxThreads(_maxThreads), reverse(_reverse),
+      maxThreads(_maxThreads), isCav(_isCav), reverse(_reverse),
       abort(false), ldDecodeMetaData(_ldDecodeMetaData), sourceVideos(_sourceVideos)
 {
 }
@@ -97,6 +97,12 @@ bool SequencingPool::process()
     return true;
 }
 
+void SequencingPool::getParameters(bool& _reverse,bool& _isCav)
+{
+	_isCav = isCav;
+	_reverse = reverse;
+}
+
 // Get the next frame that needs processing from the input.
 //
 // Returns true if a frame was returned, false if the end of the input has been
@@ -105,7 +111,6 @@ bool SequencingPool::getInputFrame(qint32& frameNumber,
                                   QVector<qint32>& firstFieldNumber, QVector<SourceVideo::Data>& firstFieldVideoData, QVector<LdDecodeMetaData::Field>& firstFieldMetadata,
                                   QVector<qint32>& secondFieldNumber, QVector<SourceVideo::Data>& secondFieldVideoData, QVector<LdDecodeMetaData::Field>& secondFieldMetadata,
                                   QVector<LdDecodeMetaData::VideoParameters>& videoParameters,
-                                  bool& _reverse,
                                   QVector<qint32>& availableSourcesForFrame)
 {
     QMutexLocker locker(&inputMutex);
@@ -159,9 +164,6 @@ bool SequencingPool::getInputFrame(qint32& frameNumber,
     } else {
         availableSourcesForFrame.append(0);
     }
-
-    // Set the other miscellaneous parameters
-    _reverse = reverse;
 	
     return true;
 }

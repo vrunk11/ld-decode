@@ -80,9 +80,14 @@ int main(int argc, char *argv[])
                                        QCoreApplication::translate("main", "Reverse the field order to second/first (default first/second)"));
     parser.addOption(setReverseOption);
 	
+	// Option to select CAV time encoding instead of CLV (-cav)
+    QCommandLineOption setIsCavOption(QStringList() << "cav",
+                                       QCoreApplication::translate("main", "select CAV time encoding instead of CLV"));
+    parser.addOption(setIsCavOption);
+	
 	// Option to set frame number offset  (-offset)
     QCommandLineOption setOffsetOption(QStringList() << "offset",
-                                       QCoreApplication::translate("main", "Offset in frame before inserting frame number (default 0"));
+                                       QCoreApplication::translate("main", "Offset in frame before inserting frame number (default 0)"));
     parser.addOption(setOffsetOption);
 
     // Option to select the number of threads (-t)
@@ -108,6 +113,7 @@ int main(int argc, char *argv[])
 
     // Get the options from the parser
     bool reverse = parser.isSet(setReverseOption);
+	bool isCav = parser.isSet(setIsCavOption);
     int offset = parser.isSet(setOffsetOption);
 
     // Get the arguments from the parser
@@ -283,7 +289,7 @@ int main(int argc, char *argv[])
     qInfo() << "Initial source checks are ok and sources are loaded";
     qint32 result = 0;
     SequencingPool sequencingPool(outputFilename, outputJsonFilename, maxThreads,
-                                ldDecodeMetaData, sourceVideos, reverse);
+                                ldDecodeMetaData, sourceVideos, isCav, reverse);
     if (!sequencingPool.process()) result = 1;
 
     // Close open source video files
