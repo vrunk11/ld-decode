@@ -48,12 +48,10 @@ public:
     // Member functions used by worker threads
 	void getParameters(long& _offset,bool& _isCav);
 	
-    bool getInputFrame(qint32& frameNumber,
-                       QVector<qint32> &firstFieldNumber, QVector<SourceVideo::Data> &firstFieldVideoData, QVector<LdDecodeMetaData::Field> &firstFieldMetadata,
-                       QVector<qint32> &secondFieldNumber, QVector<SourceVideo::Data> &secondFieldVideoData, QVector<LdDecodeMetaData::Field> &secondFieldMetadata,
-                       QVector<LdDecodeMetaData::VideoParameters> &videoParameters,
-                       QVector<qint32> &availableSourcesForFrame);
-
+	bool getInputFrameSequence(qint32& frameNumber,int& nbFieldValid,
+                       QVector<QVector<qint32>> &fieldNumber, QVector<QVector<SourceVideo::Data>> &fieldVideoData, QVector<QVector<LdDecodeMetaData::Field>> &fieldMetadata,
+                       QVector<LdDecodeMetaData::VideoParameters> &videoParameters);
+						
     bool setOutputFrame(qint32 frameNumber,
                         SourceVideo::Data firstTargetFieldData, SourceVideo::Data secondTargetFieldData,
                         qint32 firstFieldSeqNo, qint32 secondFieldSeqNo);
@@ -96,7 +94,6 @@ private:
     QVector<qint32> sourceMinimumVbiFrame;
     QVector<qint32> sourceMaximumVbiFrame;
 
-    QVector<qint32> getAvailableSourcesForFrame(qint32 vbiFrameNumber);
     bool writeOutputField(const SourceVideo::Data &fieldData);
     LdDecodeMetaData &correctMetaData();
 };

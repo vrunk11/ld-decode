@@ -107,11 +107,9 @@ void SequencingPool::getParameters(long& _offset,bool& _isCav)
 //
 // Returns true if a frame was returned, false if the end of the input has been
 // reached.
-bool SequencingPool::getInputFrame(qint32& frameNumber,
-                                  QVector<qint32>& firstFieldNumber, QVector<SourceVideo::Data>& firstFieldVideoData, QVector<LdDecodeMetaData::Field>& firstFieldMetadata,
-                                  QVector<qint32>& secondFieldNumber, QVector<SourceVideo::Data>& secondFieldVideoData, QVector<LdDecodeMetaData::Field>& secondFieldMetadata,
-                                  QVector<LdDecodeMetaData::VideoParameters>& videoParameters,
-                                  QVector<qint32>& availableSourcesForFrame)
+bool SequencingPool::getInputFrameSequence(qint32& frameNumber,int& nbFieldValid,
+                                  QVector<QVector<qint32>>& fieldNumber, QVector<QVector<SourceVideo::Data>>& fieldVideoData, QVector<QVector<LdDecodeMetaData::Field>>& fieldMetadata,
+                                  QVector<LdDecodeMetaData::VideoParameters>& videoParameters)
 {
     QMutexLocker locker(&inputMutex);
 
@@ -119,54 +117,63 @@ bool SequencingPool::getInputFrame(qint32& frameNumber,
         // No more input frames
         return false;
     }
+	
+	nbFieldValid = (lastFrameNumber - inputFrameNumber)*2;
+	
+	if(nbFieldValid > 10)
+	{
+		nbFieldValid = 10;
+	}
 
     frameNumber = inputFrameNumber;
-    inputFrameNumber++;
+    inputFrameNumber+=4;
 
     // Determine the number of sources available (included padded sources)
     qint32 numberOfSources = sourceVideos.size();
 
     qDebug().nospace() << "Processing sequential frame number #" <<
-                          frameNumber << " from " << numberOfSources << " possible source(s)";
+                          frameNumber << " to " << frameNumber + 4 << "/" << lastFrameNumber << " from " << numberOfSources << " possible source(s)";
 	
     // Prepare the vectors
-    firstFieldNumber.resize(numberOfSources);
-    firstFieldVideoData.resize(numberOfSources);
-    firstFieldMetadata.resize(numberOfSources);
-    secondFieldNumber.resize(numberOfSources);
-    secondFieldVideoData.resize(numberOfSources);
-    secondFieldMetadata.resize(numberOfSources);
-    videoParameters.resize(numberOfSources);
-	
-    for (qint32 sourceNo = 0; sourceNo < numberOfSources; sourceNo++) {
-        // Determine the fields for the input frame
-        firstFieldNumber[sourceNo] = (frameNumber * 2) -1;
-        secondFieldNumber[sourceNo] = (frameNumber * 2);
-		
-        // Fetch the input data (get the fields in TBC sequence order to save seeking)
-        if (firstFieldNumber[sourceNo] < secondFieldNumber[sourceNo]) {
-            firstFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(firstFieldNumber[sourceNo]);
-            secondFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(secondFieldNumber[sourceNo]);
-        } else {
-            secondFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(secondFieldNumber[sourceNo]);
-            firstFieldVideoData[sourceNo] = sourceVideos[sourceNo]->getVideoField(firstFieldNumber[sourceNo]);
-        }
+    for(int i = 0;i <= nbFieldValid;i+=2)
+	{
+		if(i != nbFieldValid || nbFieldValid <= 5)
+		{
+			fieldNumber[i].resize(numberOfSources);
+			fieldNumber[i+1].resize(numberOfSources);
+			
+			fieldVideoData[i].resize(numberOfSources);
+			fieldVideoData[i+1].resize(numberOfSources);
+			
+			fieldMetadata[i].resize(numberOfSources);
+			fieldMetadata[i+1].resize(numberOfSources);
+			
+			videoParameters.resize(numberOfSources);
+			
+			for (qint32 sourceNo = 0; sourceNo < numberOfSources; sourceNo++) {
+				// Determine the fields for the input frame
+				fieldNumber[i][sourceNo] = (frameNumber * 2) -1;
+				fieldNumber[i+1][sourceNo] = (frameNumber * 2);
+				
+				// Fetch the input data (get the fields in TBC sequence order to save seeking)
+				if (fieldNumber[i][sourceNo] < fieldNumber[i+1][sourceNo]) {
+					fieldVideoData[i][sourceNo] = sourceVideos[sourceNo]->getVideoField(fieldNumber[i][sourceNo]+i);
+					fieldVideoData[i+1][sourceNo] = sourceVideos[sourceNo]->getVideoField(fieldNumber[i+1][sourceNo]+i);
+				} else {
+					fieldVideoData[i+1][sourceNo] = sourceVideos[sourceNo]->getVideoField(fieldNumber[i+1][sourceNo]+i);
+					fieldVideoData[i][sourceNo] = sourceVideos[sourceNo]->getVideoField(fieldNumber[i][sourceNo]+i);
+				}
 
-        firstFieldMetadata[sourceNo] = ldDecodeMetaData[sourceNo]->getField(firstFieldNumber[sourceNo]);
-        secondFieldMetadata[sourceNo] = ldDecodeMetaData[sourceNo]->getField(secondFieldNumber[sourceNo]);
-        videoParameters[sourceNo] = ldDecodeMetaData[sourceNo]->getVideoParameters();
-    }
-
-    // Figure out which of the available sources can be used to correct the current frame
-    availableSourcesForFrame.clear();
-    if (numberOfSources > 1) {
-        availableSourcesForFrame = getAvailableSourcesForFrame(frameNumber);//getAvailableSourcesForFrame(currentVbiFrame);
-    } else {
-        availableSourcesForFrame.append(0);
-    }
+				fieldMetadata[i][sourceNo] = ldDecodeMetaData[sourceNo]->getField(fieldNumber[i][sourceNo]+i);
+				fieldMetadata[i+1][sourceNo] = ldDecodeMetaData[sourceNo]->getField(fieldNumber[i+1][sourceNo]+i);
+				videoParameters[sourceNo] = ldDecodeMetaData[sourceNo]->getVideoParameters();
+			}
+		}
+	}
 	
     return true;
 }
+
 
 // Put a corrected frame into the output stream.
 //
@@ -227,47 +234,6 @@ bool SequencingPool::setOutputFrame(qint32 frameNumber,
     }
 
     return true;
-}
-
-// Method that returns a vector of the sources that contain data for the required VBI frame number
-QVector<qint32> SequencingPool::getAvailableSourcesForFrame(qint32 vbiFrameNumber)
-{
-    QVector<qint32> availableSourcesForFrame;
-    /*for (qint32 sourceNo = 0; sourceNo < sourceVideos.size(); sourceNo++) {
-        if (vbiFrameNumber >= sourceMinimumVbiFrame[sourceNo] && vbiFrameNumber <= sourceMaximumVbiFrame[sourceNo]) {
-            // Get the field numbers for the frame - THIS CRASHES
-            qint32 sequentialFrameNumber = convertVbiFrameNumberToSequential(vbiFrameNumber, sourceNo);
-
-            // Check the source contains enough frames to have the required sequential frame
-            if (ldDecodeMetaData[sourceNo]->getNumberOfFrames() < sequentialFrameNumber)
-            {
-                // Sequential frame is out of bounds
-                qDebug() << "VBI Frame number" << vbiFrameNumber << "is out of bounds for source " << sourceNo;
-            } else {
-                // Sequential frame is in bounds
-                qint32 firstFieldNumber = ldDecodeMetaData[sourceNo]->getFirstFieldNumber(sequentialFrameNumber);
-                qint32 secondFieldNumber = ldDecodeMetaData[sourceNo]->getSecondFieldNumber(sequentialFrameNumber);
-
-                // Ensure the frame is not a padded field (i.e. missing)
-                if (ldDecodeMetaData[sourceNo]->getField(firstFieldNumber).pad == false && ldDecodeMetaData[sourceNo]->getField(secondFieldNumber).pad == false) {
-                    availableSourcesForFrame.append(sourceNo);
-                } else {
-                    if (ldDecodeMetaData[sourceNo]->getField(firstFieldNumber).pad == true) qDebug() << "First field number" << firstFieldNumber << "of source" << sourceNo << "is padded";
-                    if (ldDecodeMetaData[sourceNo]->getField(secondFieldNumber).pad == true) qDebug() << "Second field number" << firstFieldNumber << "of source" << sourceNo << "is padded";
-                }
-            }
-        }
-    }
-
-    if (availableSourcesForFrame.size() != sourceVideos.size()) {
-        if (availableSourcesForFrame.size() > 0) {
-            qDebug() << "VBI Frame number" << vbiFrameNumber << "has only" << availableSourcesForFrame.size() << "available sources";
-        } else {
-            qInfo() << "Warning: VBI Frame number" << vbiFrameNumber << "has ZERO available sources (all sources padded?)";
-        }
-    }*/
-	availableSourcesForFrame.append(0);//return only first source as available for testing
-    return availableSourcesForFrame;
 }
 
 // Write a field to the output file.

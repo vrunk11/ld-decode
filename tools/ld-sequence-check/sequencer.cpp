@@ -34,47 +34,52 @@ void Sequencer::run()
 {
     // Variables for getInputFrame
     qint32 frameNumber;
-    QVector<qint32> firstFieldSeqNo;
-    QVector<qint32> secondFieldSeqNo;
-    QVector<SourceVideo::Data> firstSourceField;
-    QVector<SourceVideo::Data> secondSourceField;
-    QVector<LdDecodeMetaData::Field> firstFieldMetadata;
-    QVector<LdDecodeMetaData::Field> secondFieldMetadata;
-    QVector<qint32> availableSourcesForFrame;
+	
+	QVector<QVector<qint32>> sequenceFieldSeqNo;
+	QVector<QVector<SourceVideo::Data>> sequenceSourceField;
+	QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata;
+	
+	sequenceFieldSeqNo.resize(10);
+	sequenceSourceField.resize(10);
+	sequenceFieldMetadata.resize(10);
+	
+	//other variables
 	long offset;
 	bool isPal = 0;
 	bool isCav = 0;
+	int nbFieldValid = 0;
 	VbiData vbiData;
 	
 	sequencingPool.getParameters(offset,isCav);
 	
     while(!abort) {
         // Get the next field to process from the input file
-        if (!sequencingPool.getInputFrame(frameNumber, firstFieldSeqNo, firstSourceField, firstFieldMetadata,
-                                       secondFieldSeqNo, secondSourceField, secondFieldMetadata,
-                                       videoParameters, availableSourcesForFrame)) {
+        if (!sequencingPool.getInputFrameSequence(frameNumber, nbFieldValid, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata,videoParameters))
+		{
             // No more input fields -- exit
 			qInfo() << "(Sequencer) end of TBC...";
             break;
         }
-		//get video standard
+		// get video standard
 		isPal = (videoParameters[0].system == PAL) ? 1 : 0 ;
 		
-        // Initialise the output fields and process sources to output
-        SourceVideo::Data outputFirstField(firstSourceField[0].size());
-        SourceVideo::Data outputSecondField(secondSourceField[0].size());
-		
-		//insert only if its possible
-		if(frameNumber + offset > 0)
+		//write each availeble field
+		for(int i=0;i <= nbFieldValid;i+=2)
 		{
-			if(!Sequencer::generate24BitCode(&vbiData,frameNumber + offset,isCav,isPal))
+			if(i != nbFieldValid || nbFieldValid <= 5)
 			{
-				Sequencer::encode24BitManchester(firstSourceField,&vbiData,isCav,videoParameters[0]);
+				//insert only if its possible
+				if(frameNumber +(i/2) + offset > 0)
+				{
+					if(!Sequencer::generate24BitCode(&vbiData,frameNumber + i + offset,isCav,isPal))
+					{
+						Sequencer::encode24BitManchester(sequenceSourceField[i],&vbiData,isCav,videoParameters[0]);
+					}
+				}
+				sequencingPool.setOutputFrame(frameNumber+(i/2), sequenceSourceField[i][0], sequenceSourceField[i+1][0],
+										sequenceFieldSeqNo[i][0], sequenceFieldSeqNo[i+1][0]);
 			}
-		}
-		
-		sequencingPool.setOutputFrame(frameNumber, firstSourceField[0], secondSourceField[0],
-                                    firstFieldSeqNo[0], secondFieldSeqNo[0]);
+		}					
     }
 	qInfo() << "(Sequencer) end of processing";
 }
@@ -86,7 +91,7 @@ int Sequencer::generate24BitCode(VbiData* vbiData,int frameNumber,bool isCav,boo
 	int bitCode16 = 0;
 	int bitCode17 = 0;
 	int bitCode18 = 0;
-	int hexValues[1][5];//it loose value [0][4] if i didnt set the size to [1][5] and i don't know why
+	int hexValues[2][5];
 	
 	//clv time
 	int hour = 0;
@@ -230,7 +235,7 @@ void Sequencer::encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiD
 	int i = 0;
 	int y = 0;
 	
-	bool bitValue[5];//store 
+	bool bitValue[6];//store 
 	
 	//for each bit
 	for(i = 0; i < 24;i++)
