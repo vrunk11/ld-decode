@@ -41,12 +41,12 @@ class SequencingPool : public QObject
 public:
     explicit SequencingPool(QString _outputFilename, QString _outputJsonFilename,
                            qint32 _maxThreads, QVector<LdDecodeMetaData *> &_ldDecodeMetaData, QVector<SourceVideo *> &_sourceVideos,
-                           bool _isCav, bool _reverse, QObject *parent = nullptr);
+                           bool _isCav, long _offset, QObject *parent = nullptr);
 
     bool process();
 
     // Member functions used by worker threads
-	void getParameters(bool& _reverse,bool& _isCav);
+	void getParameters(long& _offset,bool& _isCav);
 	
     bool getInputFrame(qint32& frameNumber,
                        QVector<qint32> &firstFieldNumber, QVector<SourceVideo::Data> &firstFieldVideoData, QVector<LdDecodeMetaData::Field> &firstFieldMetadata,
@@ -63,7 +63,7 @@ private:
     QString outputJsonFilename;
     qint32 maxThreads;
     bool isCav;
-    bool reverse;
+    long offset;
     QElapsedTimer totalTimer;
 
     // Atomic abort flag shared by worker threads; workers watch this, and shut

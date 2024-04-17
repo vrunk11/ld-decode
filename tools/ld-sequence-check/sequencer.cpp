@@ -41,12 +41,12 @@ void Sequencer::run()
     QVector<LdDecodeMetaData::Field> firstFieldMetadata;
     QVector<LdDecodeMetaData::Field> secondFieldMetadata;
     QVector<qint32> availableSourcesForFrame;
-	bool reverse;
+	long offset;
 	bool isPal = 0;
 	bool isCav = 0;
 	VbiData vbiData;
 	
-	sequencingPool.getParameters(reverse,isCav);
+	sequencingPool.getParameters(offset,isCav);
 	
     while(!abort) {
         // Get the next field to process from the input file
@@ -65,9 +65,12 @@ void Sequencer::run()
         SourceVideo::Data outputSecondField(secondSourceField[0].size());
 		
 		//insert only if its possible
-		if(!Sequencer::generate24BitCode(&vbiData,frameNumber,isCav,isPal))
+		if(frameNumber + offset > 0)
 		{
-			Sequencer::encode24BitManchester(firstSourceField,&vbiData,isCav,videoParameters[0]);
+			if(!Sequencer::generate24BitCode(&vbiData,frameNumber + offset,isCav,isPal))
+			{
+				Sequencer::encode24BitManchester(firstSourceField,&vbiData,isCav,videoParameters[0]);
+			}
 		}
 		
 		sequencingPool.setOutputFrame(frameNumber, firstSourceField[0], secondSourceField[0],
@@ -78,6 +81,8 @@ void Sequencer::run()
 
 int Sequencer::generate24BitCode(VbiData* vbiData,int frameNumber,bool isCav,bool isPal)
 {
+	frameNumber --;//remove 1 to start at frame 0
+	
 	int bitCode16 = 0;
 	int bitCode17 = 0;
 	int bitCode18 = 0;
@@ -95,7 +100,14 @@ int Sequencer::generate24BitCode(VbiData* vbiData,int frameNumber,bool isCav,boo
 	{
 		if((frameNumber > 79999 && !isPal) || (frameNumber > 99999 && isPal))
 		{
-			qCritical() << "CAV Frame number too high consider using CLV timecode instead...";
+			if(isPal)
+			{
+				qCritical() << "CAV Frame number too high (exeding : 99999 frame) consider using CLV timecode instead...";
+			}
+			else
+			{
+				qCritical() << "CAV Frame number too high (exeding : 79999 frame) consider using CLV timecode instead...";
+			}
 			return 1;
 		}
 		
@@ -121,7 +133,7 @@ int Sequencer::generate24BitCode(VbiData* vbiData,int frameNumber,bool isCav,boo
 	}
 	else//CLV
 	{
-		if((frameNumber > 1079970 && !isPal) || (frameNumber > 899975 && isPal))
+		if((frameNumber > 1079999 && !isPal) || (frameNumber > 899975 && isPal))
 		{
 			qCritical() << "CLV Frame number too high : exeding 9h 59min 59sec";
 			return 1;

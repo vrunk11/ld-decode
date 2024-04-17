@@ -87,7 +87,8 @@ int main(int argc, char *argv[])
 	
 	// Option to set frame number offset  (-offset)
     QCommandLineOption setOffsetOption(QStringList() << "offset",
-                                       QCoreApplication::translate("main", "Offset in frame before inserting frame number (default 0)"));
+                                       QCoreApplication::translate("main", "Offset in frame before inserting frame number (default 0)"),
+                                       QCoreApplication::translate("main", "FrameNumber"));
     parser.addOption(setOffsetOption);
 
     // Option to select the number of threads (-t)
@@ -114,7 +115,11 @@ int main(int argc, char *argv[])
     // Get the options from the parser
     bool reverse = parser.isSet(setReverseOption);
 	bool isCav = parser.isSet(setIsCavOption);
-    int offset = parser.isSet(setOffsetOption);
+	long offset = 0;
+	if(parser.isSet(setOffsetOption))
+	{
+		offset = parser.value(setOffsetOption).toLong();
+	}
 
     // Get the arguments from the parser
     qint32 maxThreads = QThread::idealThreadCount();
@@ -289,7 +294,7 @@ int main(int argc, char *argv[])
     qInfo() << "Initial source checks are ok and sources are loaded";
     qint32 result = 0;
     SequencingPool sequencingPool(outputFilename, outputJsonFilename, maxThreads,
-                                ldDecodeMetaData, sourceVideos, isCav, reverse);
+                                ldDecodeMetaData, sourceVideos, isCav, offset);
     if (!sequencingPool.process()) result = 1;
 
     // Close open source video files
