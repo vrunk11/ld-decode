@@ -60,6 +60,8 @@ bool SequencingPool::process()
     inputFrameNumber = 1;
     outputFrameNumber = 1;
     lastFrameNumber = ldDecodeMetaData[0]->getNumberOfFrames();
+	latestFrameNumber = 0;
+	threadOk.resize(maxThreads);
     totalTimer.start();
 
     // Start a vector of decoding threads to process the video
@@ -67,7 +69,7 @@ bool SequencingPool::process()
     QVector<QThread *> threads;
     threads.resize(maxThreads);
     for (qint32 i = 0; i < maxThreads; i++) {
-        threads[i] = new Sequencer(abort, *this);
+        threads[i] = new Sequencer(i,threadOk,maxThreads,abort, *this);
         threads[i]->start(QThread::LowPriority);
     }
 
@@ -107,11 +109,13 @@ void SequencingPool::getParameters(long& _offset,bool& _isCav)
 //
 // Returns true if a frame was returned, false if the end of the input has been
 // reached.
-bool SequencingPool::getInputFrameSequence(qint32& frameNumber,int& nbFieldValid,
+bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int& nbFieldValid,
                                   QVector<QVector<qint32>>& fieldNumber, QVector<QVector<SourceVideo::Data>>& fieldVideoData, QVector<QVector<LdDecodeMetaData::Field>>& fieldMetadata,
                                   QVector<LdDecodeMetaData::VideoParameters>& videoParameters)
 {
     QMutexLocker locker(&inputMutex);
+	
+	int precedingThread = idThread -1;
 
     if (inputFrameNumber > lastFrameNumber) {
         // No more input frames
@@ -124,9 +128,19 @@ bool SequencingPool::getInputFrameSequence(qint32& frameNumber,int& nbFieldValid
 	{
 		nbFieldValid = 10;
 	}
-
+	
+	if(idThread == 0)
+	{
+		precedingThread = maxThreads -1;
+	}
+	threadOk[idThread] = 1;//waiting
+	while(threadOk[precedingThread] < 1 && frameNumber > 1){}//wait other threads to finish
+	threadOk[idThread] = 2;//getting frame number
+	
     frameNumber = inputFrameNumber;
     inputFrameNumber+=4;
+	
+	threadOk[idThread] = 3;//getting frame number ok
 
     // Determine the number of sources available (included padded sources)
     qint32 numberOfSources = sourceVideos.size();
@@ -234,6 +248,21 @@ bool SequencingPool::setOutputFrame(qint32 frameNumber,
     }
 
     return true;
+}
+
+int SequencingPool::getLastFrameNumber()
+{
+	return lastFrameNumber;
+}
+
+int SequencingPool::getLatestFrameNumber()
+{
+	return latestFrameNumber;
+}
+
+void SequencingPool::setLatestFrameNumber(int value)
+{
+	latestFrameNumber = value;
 }
 
 // Write a field to the output file.

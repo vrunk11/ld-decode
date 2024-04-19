@@ -25,8 +25,8 @@
 #include "sequencer.h"
 #include "sequencingpool.h"
 
-Sequencer::Sequencer(QAtomicInt& _abort, SequencingPool& _sequencingPool, QObject *parent)
-    : QThread(parent), abort(_abort), sequencingPool(_sequencingPool)
+Sequencer::Sequencer(int _idThread,QVector<qint32>& _threadOk, int _maxThreads, QAtomicInt& _abort, SequencingPool& _sequencingPool, QObject *parent)
+    : QThread(parent), idThread(_idThread), threadOk(_threadOk), maxThreads(_maxThreads), abort(_abort), sequencingPool(_sequencingPool)
 {
 }
 
@@ -54,7 +54,7 @@ void Sequencer::run()
 	
     while(!abort) {
         // Get the next field to process from the input file
-        if (!sequencingPool.getInputFrameSequence(frameNumber, nbFieldValid, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata,videoParameters))
+        if (!sequencingPool.getInputFrameSequence(idThread, frameNumber, nbFieldValid, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata,videoParameters))
 		{
             // No more input fields -- exit
 			qInfo() << "(Sequencer) end of TBC...";
@@ -62,6 +62,9 @@ void Sequencer::run()
         }
 		// get video standard
 		isPal = (videoParameters[0].system == PAL) ? 1 : 0 ;
+		
+		//analyse and set number for each frame
+		Sequencer::sequenceCheck(frameNumber,sequenceFieldSeqNo,sequenceSourceField,sequenceFieldMetadata,&vbiData);
 		
 		//write each availeble field
 		for(int i=0;i <= nbFieldValid;i+=2)
@@ -71,7 +74,7 @@ void Sequencer::run()
 				//insert only if its possible
 				if(frameNumber +(i/2) + offset > 0)
 				{
-					if(!Sequencer::generate24BitCode(&vbiData,frameNumber + i + offset,isCav,isPal))
+					if(!Sequencer::generate24BitCode(&vbiData,vbiData.vbiNumber[i/2] + offset,isCav,isPal))
 					{
 						Sequencer::encode24BitManchester(sequenceSourceField[i],&vbiData,isCav,videoParameters[0]);
 					}
@@ -79,14 +82,49 @@ void Sequencer::run()
 				sequencingPool.setOutputFrame(frameNumber+(i/2), sequenceSourceField[i][0], sequenceSourceField[i+1][0],
 										sequenceFieldSeqNo[i][0], sequenceFieldSeqNo[i+1][0]);
 			}
-		}					
+		}				
     }
 	qInfo() << "(Sequencer) end of processing";
 }
 
-int Sequencer::generate24BitCode(VbiData* vbiData,int frameNumber,bool isCav,bool isPal)
+void Sequencer::sequenceCheck(long frameNumber, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData)
 {
-	frameNumber --;//remove 1 to start at frame 0
+	int frameTreated = 4;
+	int precedingThread = Sequencer::idThread -1;
+	
+	if(idThread == 0)
+	{
+		precedingThread = maxThreads-1;
+	}
+	threadOk[idThread] = 4;//waiting sequence analysis from previous thread
+	while(threadOk[precedingThread] < 6 && frameNumber > 1){}//wait other threads to finish
+	threadOk[idThread] = 5;//running
+	
+	//get latest frame number
+	int latestFrameNumber = sequencingPool.getLatestFrameNumber();
+	
+	//if wa are at the end treat the last frame
+	if((frameNumber + 5) >=  sequencingPool.getLastFrameNumber())
+	{
+		frameTreated = ((frameNumber + 5) - sequencingPool.getLastFrameNumber());
+	}
+	
+	for(int i = 0; i < frameTreated;i++)
+	{
+		vbiData->vbiNumber[i] = latestFrameNumber;
+		latestFrameNumber++;
+	}
+	
+	//set latest frame number
+	sequencingPool.setLatestFrameNumber(latestFrameNumber);
+	qInfo() << "(latestFrameNumber) " << latestFrameNumber;
+	
+	threadOk[idThread] = 6;//set to ready	
+}
+
+int Sequencer::generate24BitCode(VbiData* vbiData,long frameNumber,bool isCav,bool isPal)
+{
+	//frameNumber --;//remove 1 to start at frame 0
 	
 	int bitCode16 = 0;
 	int bitCode17 = 0;

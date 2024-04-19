@@ -40,7 +40,7 @@ class Sequencer : public QThread
 {
     Q_OBJECT
 public:
-    explicit Sequencer(QAtomicInt& _abort, SequencingPool& _sequencingPool, QObject *parent = nullptr);
+    explicit Sequencer(int _idThread,QVector<qint32>& _threadOk, int _maxThreads,QAtomicInt& _abort, SequencingPool& _sequencingPool, QObject *parent = nullptr);
 
 protected:
 	//data used for 24 bit manchester encoding
@@ -51,13 +51,18 @@ protected:
         bool dataL17F2[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
         bool dataL18[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
         bool dataL18F2[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+        long vbiNumber[5] = {0,0,0,0,0};
     };
     void run() override;
-	int generate24BitCode(VbiData* vbiData,int frameNumber,bool isCav,bool isPal);
+	void sequenceCheck(long frameNumber, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData);
+	int generate24BitCode(VbiData* vbiData,long frameNumber,bool isCav,bool isPal);
 	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData *bitCode,bool isCav,const LdDecodeMetaData::VideoParameters& videoParameters);
 
 private:
     // Sequencing pool
+	int idThread;
+	QVector<qint32>& threadOk;
+	int maxThreads;
     QAtomicInt& abort;
     SequencingPool& sequencingPool;
     QVector<LdDecodeMetaData::VideoParameters> videoParameters;

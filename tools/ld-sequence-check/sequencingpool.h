@@ -48,18 +48,22 @@ public:
     // Member functions used by worker threads
 	void getParameters(long& _offset,bool& _isCav);
 	
-	bool getInputFrameSequence(qint32& frameNumber,int& nbFieldValid,
+	bool getInputFrameSequence(int idThread,qint32& frameNumber,int& nbFieldValid,
                        QVector<QVector<qint32>> &fieldNumber, QVector<QVector<SourceVideo::Data>> &fieldVideoData, QVector<QVector<LdDecodeMetaData::Field>> &fieldMetadata,
                        QVector<LdDecodeMetaData::VideoParameters> &videoParameters);
 						
     bool setOutputFrame(qint32 frameNumber,
                         SourceVideo::Data firstTargetFieldData, SourceVideo::Data secondTargetFieldData,
                         qint32 firstFieldSeqNo, qint32 secondFieldSeqNo);
+	int getLastFrameNumber();
+	int getLatestFrameNumber();
+	void setLatestFrameNumber(int value);
 
 private:
     QString outputFilename;
     QString outputJsonFilename;
     qint32 maxThreads;
+	QVector<qint32> threadOk;
     bool isCav;
     long offset;
     QElapsedTimer totalTimer;
@@ -84,7 +88,9 @@ private:
         qint32 firstFieldSeqNo;
         qint32 secondFieldSeqNo;
     };
-
+	
+	int latestFrameNumber;
+	
     qint32 outputFrameNumber;
     QMap<qint32, OutputFrame> pendingOutputFrames;
     QFile targetVideo;
