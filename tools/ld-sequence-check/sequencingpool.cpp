@@ -129,13 +129,16 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
 		nbFieldValid = 10;
 	}
 	
-	if(idThread == 0)
+	if(maxThreads > 1)
 	{
-		precedingThread = maxThreads -1;
+		if(idThread == 0)
+		{
+			precedingThread = maxThreads -1;
+		}
+		threadOk[idThread] = 1;//waiting
+		while(threadOk[precedingThread] < 1 && frameNumber > 1){}//wait other threads to finish
+		threadOk[idThread] = 2;//getting frame number
 	}
-	threadOk[idThread] = 1;//waiting
-	while(threadOk[precedingThread] < 1 && frameNumber > 1){}//wait other threads to finish
-	threadOk[idThread] = 2;//getting frame number
 	
     frameNumber = inputFrameNumber;
     inputFrameNumber+=4;

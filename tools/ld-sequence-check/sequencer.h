@@ -54,9 +54,10 @@ protected:
         long vbiNumber[5] = {0,0,0,0,0};
     };
     void run() override;
-	void sequenceCheck(long frameNumber, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData);
+	void sequenceCheck(long frameNumber, bool isPal, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters);
 	int generate24BitCode(VbiData* vbiData,long frameNumber,bool isCav,bool isPal);
 	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData *bitCode,bool isCav,const LdDecodeMetaData::VideoParameters& videoParameters);
+	int getPhaseId(QVector<SourceVideo::Data> sequenceSourceField, int isPal, LdDecodeMetaData::VideoParameters& videoParameters);
 
 private:
     // Sequencing pool

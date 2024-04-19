@@ -54,7 +54,7 @@ void Sequencer::run()
 	
     while(!abort) {
         // Get the next field to process from the input file
-        if (!sequencingPool.getInputFrameSequence(idThread, frameNumber, nbFieldValid, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata,videoParameters))
+        if (!sequencingPool.getInputFrameSequence(idThread, frameNumber, nbFieldValid, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata, videoParameters))
 		{
             // No more input fields -- exit
 			qInfo() << "(Sequencer) end of TBC...";
@@ -64,7 +64,7 @@ void Sequencer::run()
 		isPal = (videoParameters[0].system == PAL) ? 1 : 0 ;
 		
 		//analyse and set number for each frame
-		Sequencer::sequenceCheck(frameNumber,sequenceFieldSeqNo,sequenceSourceField,sequenceFieldMetadata,&vbiData);
+		Sequencer::sequenceCheck(frameNumber, isPal, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata, &vbiData, videoParameters);
 		
 		//write each availeble field
 		for(int i=0;i <= nbFieldValid;i+=2)
@@ -87,18 +87,24 @@ void Sequencer::run()
 	qInfo() << "(Sequencer) end of processing";
 }
 
-void Sequencer::sequenceCheck(long frameNumber, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData)
+void Sequencer::sequenceCheck(long frameNumber, bool isPal, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters)
 {
 	int frameTreated = 4;
 	int precedingThread = Sequencer::idThread -1;
 	
-	if(idThread == 0)
+	int phaseId = 0;
+	int phaseId2 = 0;
+	
+	if(maxThreads > 1)
 	{
-		precedingThread = maxThreads-1;
+		if(idThread == 0)
+		{
+			precedingThread = maxThreads-1;
+		}
+		threadOk[idThread] = 4;//waiting sequence analysis from previous thread
+		while(threadOk[precedingThread] < 6 && frameNumber > 1){}//wait other threads to finish
+		threadOk[idThread] = 5;//running
 	}
-	threadOk[idThread] = 4;//waiting sequence analysis from previous thread
-	while(threadOk[precedingThread] < 6 && frameNumber > 1){}//wait other threads to finish
-	threadOk[idThread] = 5;//running
 	
 	//get latest frame number
 	int latestFrameNumber = sequencingPool.getLatestFrameNumber();
@@ -109,15 +115,55 @@ void Sequencer::sequenceCheck(long frameNumber, QVector<QVector<qint32>> sequenc
 		frameTreated = ((frameNumber + 5) - sequencingPool.getLastFrameNumber());
 	}
 	
+	//sequence analysis
 	for(int i = 0; i < frameTreated;i++)
 	{
+		/*phaseId = getPhaseId(sequenceSourceField[i], isPal , videoParameters[0]);
+		phaseId2 = getPhaseId(sequenceSourceField[i+1], isPal , videoParameters[0]);
+		
+		if(isPal)
+		{
+			if(phaseId == phaseId2)
+			{
+				vbiData->vbiNumber[i] = latestFrameNumber -1;
+			}
+			else if(phaseId +1 == phaseId2)
+			{
+				vbiData->vbiNumber[i] = latestFrameNumber;
+				latestFrameNumber++;
+			}
+			else if(phaseId +2 == phaseId2)
+			{
+				vbiData->vbiNumber[i] = latestFrameNumber +1;
+				latestFrameNumber += 2;
+			}
+			else if(phaseId +3 == phaseId2)
+			{
+				vbiData->vbiNumber[i] = latestFrameNumber +2;
+				latestFrameNumber += 3;
+			}
+		}
+		else//ntsc
+		{
+			if(phaseId == phaseId2)
+			{
+				//asume a skip of 1 frame
+				vbiData->vbiNumber[i] = latestFrameNumber +1;
+				latestFrameNumber += 2;
+				qInfo() << "\n(sequence check) skip detected !!!!!\n " << frameNumber;
+			}
+			else if(phaseId != phaseId2)
+			{
+				vbiData->vbiNumber[i] = latestFrameNumber;
+				latestFrameNumber++;
+			}
+		}*/
 		vbiData->vbiNumber[i] = latestFrameNumber;
 		latestFrameNumber++;
 	}
 	
 	//set latest frame number
 	sequencingPool.setLatestFrameNumber(latestFrameNumber);
-	qInfo() << "(latestFrameNumber) " << latestFrameNumber;
 	
 	threadOk[idThread] = 6;//set to ready	
 }
@@ -316,4 +362,39 @@ void Sequencer::encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiD
 			}
 		}
 	}
+}
+
+//get phase from chroma burst
+int Sequencer::getPhaseId(QVector<SourceVideo::Data> sequenceSourceField, int isPal, LdDecodeMetaData::VideoParameters& videoParameters)
+{
+	int value = 0;
+	int phaseId = 0;
+	int tmp = 0;
+	
+	if(isPal)
+	{
+		for(int i = 0;i < 4;i++)
+		{
+			//seek the position of highest value
+			tmp = sequenceSourceField[0][(videoParameters.fieldWidth * 75) + videoParameters.colourBurstStart + 17 + i];
+			if(value < tmp)
+			{
+				value = tmp;
+				phaseId++;
+			}
+		}
+	}
+	else
+	{
+		//find the position of highest value
+		if(sequenceSourceField[0][(videoParameters.fieldWidth * 75) + videoParameters.colourBurstStart + 17] > sequenceSourceField[0][(videoParameters.fieldWidth * 75) + videoParameters.colourBurstStart + 17 + 2])
+		{
+			phaseId = 1;
+		}
+		else
+		{
+			phaseId = 2;
+		}
+	}
+	return phaseId;
 }
