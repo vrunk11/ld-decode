@@ -80,12 +80,17 @@ int main(int argc, char *argv[])
                                        QCoreApplication::translate("main", "Reverse the field order to second/first (default first/second)"));
     parser.addOption(setReverseOption);
 	
-	// Option to select CAV time encoding instead of CLV (-cav)
+	// Option to select CAV time encoding instead of CLV (--cav)
     QCommandLineOption setIsCavOption(QStringList() << "cav",
                                        QCoreApplication::translate("main", "select CAV time encoding instead of CLV"));
     parser.addOption(setIsCavOption);
 	
-	// Option to set frame number offset  (-offset)
+	// Option to disable chroma phase check (--no-phase)
+    QCommandLineOption setNoPhaseOption(QStringList() << "no-phase",
+                                       QCoreApplication::translate("main", "disable chroma phase analysis"));
+    parser.addOption(setNoPhaseOption);
+	
+	// Option to set frame number offset (--offset)
     QCommandLineOption setOffsetOption(QStringList() << "offset",
                                        QCoreApplication::translate("main", "Offset in frame before inserting frame number (default 0)"),
                                        QCoreApplication::translate("main", "FrameNumber"));
@@ -115,6 +120,7 @@ int main(int argc, char *argv[])
     // Get the options from the parser
     bool reverse = parser.isSet(setReverseOption);
 	bool isCav = parser.isSet(setIsCavOption);
+	bool noPhase = parser.isSet(setNoPhaseOption);
 	long offset = 0;
 	if(parser.isSet(setOffsetOption))
 	{
@@ -294,7 +300,7 @@ int main(int argc, char *argv[])
     qInfo() << "Initial source checks are ok and sources are loaded";
     qint32 result = 0;
     SequencingPool sequencingPool(outputFilename, outputJsonFilename, maxThreads,
-                                ldDecodeMetaData, sourceVideos, isCav, offset);
+                                ldDecodeMetaData, sourceVideos, isCav, noPhase, offset);
     if (!sequencingPool.process()) result = 1;
 
     // Close open source video files

@@ -47,10 +47,11 @@ void Sequencer::run()
 	long offset;
 	bool isPal = 0;
 	bool isCav = 0;
+	bool noPhase = 0;
 	int nbFieldValid = 0;
 	VbiData vbiData;
 	
-	sequencingPool.getParameters(offset,isCav);
+	sequencingPool.getParameters(offset, isCav, noPhase);
 	
     while(!abort) {
         // Get the next field to process from the input file
@@ -64,7 +65,13 @@ void Sequencer::run()
 		isPal = (videoParameters[0].system == PAL) ? 1 : 0 ;
 		
 		//analyse and set number for each frame
-		Sequencer::sequenceCheck(frameNumber, isPal, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata, &vbiData, videoParameters);
+		Sequencer::sequenceCheck(frameNumber, isPal, noPhase, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata, &vbiData, videoParameters);
+		
+		//if not at the end
+		if((sequencingPool.getLastFrameNumber() - frameNumber) > 5)
+		{
+			nbFieldValid = 8;//write only 4 frame
+		}
 		
 		//write each availeble field
 		for(int i=0;i <= nbFieldValid;i+=2)
@@ -87,13 +94,14 @@ void Sequencer::run()
 	qInfo() << "(Sequencer) end of processing";
 }
 
-void Sequencer::sequenceCheck(long frameNumber, bool isPal, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters)
+void Sequencer::sequenceCheck(long frameNumber, bool isPal, bool noPhase, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters)
 {
-	int frameTreated = 4;
+	int fieldTreated = 8;//4frame
 	int precedingThread = Sequencer::idThread -1;
 	
 	int phaseId = 0;
 	int phaseId2 = 0;
+	int phaseOffset = 0;
 	
 	if(maxThreads > 1)
 	{
@@ -112,54 +120,80 @@ void Sequencer::sequenceCheck(long frameNumber, bool isPal, QVector<QVector<qint
 	//if wa are at the end treat the last frame
 	if((frameNumber + 5) >=  sequencingPool.getLastFrameNumber())
 	{
-		frameTreated = ((frameNumber + 5) - sequencingPool.getLastFrameNumber());
+		fieldTreated = ((frameNumber + 5) - sequencingPool.getLastFrameNumber())*2;
 	}
 	
 	//sequence analysis
-	for(int i = 0; i < frameTreated;i++)
+	for(int i = 0; i < fieldTreated;i+=2)
 	{
-		/*phaseId = getPhaseId(sequenceSourceField[i], isPal , videoParameters[0]);
-		phaseId2 = getPhaseId(sequenceSourceField[i+1], isPal , videoParameters[0]);
-		
-		if(isPal)
+		if((sequencingPool.getLastFrameNumber() - (frameNumber + (i/2))) >= 2)
 		{
-			if(phaseId == phaseId2)
+			//if phase check not deactivated
+			if(!noPhase)
 			{
-				vbiData->vbiNumber[i] = latestFrameNumber -1;
+				phaseId = getPhaseId(sequenceSourceField[i], isPal , videoParameters[0]);
+				phaseId2 = getPhaseId(sequenceSourceField[i+2], isPal , videoParameters[0]);
+				
+				//check if there is chroma burst
+				if(phaseId != 0 && phaseId2 != 0)
+				{
+					phaseOffset = mesurePhaseOffset(isPal,phaseId,phaseId2);
+					
+					if(isPal)
+					{
+						if(phaseOffset == 0)
+						{
+							vbiData->vbiNumber[i/2] = latestFrameNumber -1;//same number as last frame (asuming repeated frame)
+							qInfo() << "(sequence check) frame repeat detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
+						}
+						else if(phaseOffset == 1)
+						{
+							vbiData->vbiNumber[i/2] = latestFrameNumber;
+							latestFrameNumber++;
+						}
+						else if(phaseOffset == 2)
+						{
+							vbiData->vbiNumber[i/2] = latestFrameNumber +1;
+							latestFrameNumber += 2;
+							qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
+						}
+						else if(phaseOffset == 3)
+						{
+							vbiData->vbiNumber[i/2] = latestFrameNumber +2;
+							latestFrameNumber += 3;
+							qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
+						}
+					}
+					else//ntsc
+					{
+						if(phaseOffset == 0)
+						{
+							//asume a skip of 1 frame
+							vbiData->vbiNumber[i/2] = latestFrameNumber +1;
+							latestFrameNumber += 2;
+							qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
+						}
+						else if(phaseOffset == 1)
+						{
+							vbiData->vbiNumber[i/2] = latestFrameNumber;
+							latestFrameNumber++;
+						}
+					}
+				}
+				else
+				{
+					vbiData->vbiNumber[i/2] = latestFrameNumber;
+					latestFrameNumber++;
+					qInfo() << "(sequence check) no phase detected";
+				}
 			}
-			else if(phaseId +1 == phaseId2)
+			else
 			{
-				vbiData->vbiNumber[i] = latestFrameNumber;
+				vbiData->vbiNumber[i/2] = latestFrameNumber;
 				latestFrameNumber++;
-			}
-			else if(phaseId +2 == phaseId2)
-			{
-				vbiData->vbiNumber[i] = latestFrameNumber +1;
-				latestFrameNumber += 2;
-			}
-			else if(phaseId +3 == phaseId2)
-			{
-				vbiData->vbiNumber[i] = latestFrameNumber +2;
-				latestFrameNumber += 3;
+				qInfo() << "(sequence check) phase detection disabled";
 			}
 		}
-		else//ntsc
-		{
-			if(phaseId == phaseId2)
-			{
-				//asume a skip of 1 frame
-				vbiData->vbiNumber[i] = latestFrameNumber +1;
-				latestFrameNumber += 2;
-				qInfo() << "\n(sequence check) skip detected !!!!!\n " << frameNumber;
-			}
-			else if(phaseId != phaseId2)
-			{
-				vbiData->vbiNumber[i] = latestFrameNumber;
-				latestFrameNumber++;
-			}
-		}*/
-		vbiData->vbiNumber[i] = latestFrameNumber;
-		latestFrameNumber++;
 	}
 	
 	//set latest frame number
@@ -369,32 +403,99 @@ int Sequencer::getPhaseId(QVector<SourceVideo::Data> sequenceSourceField, int is
 {
 	int value = 0;
 	int phaseId = 0;
-	int tmp = 0;
+	int tmp[4];
+	int blackLvl = 0;
 	
 	if(isPal)
 	{
-		for(int i = 0;i < 4;i++)
+		blackLvl = sequenceSourceField[0][(videoParameters.fieldWidth * (5)) + videoParameters.colourBurstStart - 6];
+		
+		//read 2 line to compare value
+		tmp[0] = sequenceSourceField[0][(videoParameters.fieldWidth * (75)) + videoParameters.colourBurstStart + 17];
+		tmp[1] = sequenceSourceField[0][(videoParameters.fieldWidth * (76)) + videoParameters.colourBurstStart + 17];
+		
+		tmp[2] = sequenceSourceField[0][(videoParameters.fieldWidth * (75)) + videoParameters.colourBurstStart + 17 + 2];
+		tmp[3] = sequenceSourceField[0][(videoParameters.fieldWidth * (76)) + videoParameters.colourBurstStart + 17 + 2];
+		
+		
+		//qInfo() << "(phaseID) (" << tmp[0] << "/" << tmp[1] << "/" << tmp[2] << "/" << tmp[3] << ")";
+		//find the patern
+		if(tmp[0] - tmp[2] > 15 || tmp[2] - tmp[0] > 15 || tmp[0] - tmp[2] < -15 || tmp[2] - tmp[0] < -15)//if value are close to each other = noBurst
 		{
-			//seek the position of highest value
-			tmp = sequenceSourceField[0][(videoParameters.fieldWidth * 75) + videoParameters.colourBurstStart + 17 + i];
-			if(value < tmp)
+			if(tmp[0] > blackLvl && tmp[1] > blackLvl)//tmp[0] = high / tmp[1] = high
 			{
-				value = tmp;
-				phaseId++;
+				phaseId = 1;
 			}
+			else if(tmp[0] > blackLvl && tmp[1] < blackLvl)//tmp[0] = high / tmp[1] = low
+			{
+				phaseId = 2;
+			}
+			else if(tmp[0] < blackLvl && tmp[1] < blackLvl)//tmp[0] = low / tmp[1] = low
+			{
+				phaseId = 3;
+			}
+			else//tmp[0] = low / tmp[1] = high
+			{
+				phaseId = 4;
+			}
+		}
+		else
+		{
+			//value close to each other = noBurst
+			phaseId = 0;
+			qInfo() << "(phaseID) no burst detected";
 		}
 	}
 	else
 	{
+		tmp[0] = sequenceSourceField[0][(videoParameters.fieldWidth * 75) + videoParameters.colourBurstStart + 17];
+		tmp[1] = sequenceSourceField[0][(videoParameters.fieldWidth * 75) + videoParameters.colourBurstStart + 17 + 2];
 		//find the position of highest value
-		if(sequenceSourceField[0][(videoParameters.fieldWidth * 75) + videoParameters.colourBurstStart + 17] > sequenceSourceField[0][(videoParameters.fieldWidth * 75) + videoParameters.colourBurstStart + 17 + 2])
+		if(tmp[0] - tmp[1] > 3840 || tmp[1] - tmp[0] > 3840 || tmp[0] - tmp[1] < -3840 || tmp[1] - tmp[0] < -3840)//if value are close to each other = noBurst (15 * 256 = 3840)
 		{
-			phaseId = 1;
+			if(tmp[0] > tmp[1])
+			{
+				phaseId = 1;
+			}
+			else
+			{
+				phaseId = 2;
+			}
 		}
 		else
 		{
-			phaseId = 2;
+			//value close to each other = noBurst
+			phaseId = 0;
+			qInfo() << "(phaseID) no burst detected";
 		}
 	}
 	return phaseId;
+}
+
+//get phase offset
+int Sequencer::mesurePhaseOffset(int isPal, int phaseId, int phaseId2)
+{
+	if(isPal)
+	{
+		if(phaseId2 < phaseId)
+		{
+			return((phaseId2 + 4) - phaseId);
+		}
+		else
+		{
+			return((phaseId - phaseId2)*-1);
+		}
+	}
+	else
+	{
+		if(phaseId == phaseId2)
+		{
+			return 0;
+		}
+		else
+		{
+			return 1;
+		}
+	}
+	return 0;
 }

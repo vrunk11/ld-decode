@@ -45,19 +45,20 @@ public:
 protected:
 	//data used for 24 bit manchester encoding
 	struct VbiData {
-        bool dataL16[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-        bool dataL16F2[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-        bool dataL17[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-        bool dataL17F2[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-        bool dataL18[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-        bool dataL18F2[23] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-        long vbiNumber[5] = {0,0,0,0,0};
+        bool dataL16[24];
+        bool dataL16F2[24];
+        bool dataL17[24];
+        bool dataL17F2[24];
+        bool dataL18[24];
+        bool dataL18F2[24];
+        long vbiNumber[5];//number for each frame
     };
     void run() override;
-	void sequenceCheck(long frameNumber, bool isPal, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters);
+	void sequenceCheck(long frameNumber, bool isPal, bool noPhase, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters);
 	int generate24BitCode(VbiData* vbiData,long frameNumber,bool isCav,bool isPal);
 	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData *bitCode,bool isCav,const LdDecodeMetaData::VideoParameters& videoParameters);
 	int getPhaseId(QVector<SourceVideo::Data> sequenceSourceField, int isPal, LdDecodeMetaData::VideoParameters& videoParameters);
+	int mesurePhaseOffset(int isPal, int phaseId,int phaseId2);
 
 private:
     // Sequencing pool

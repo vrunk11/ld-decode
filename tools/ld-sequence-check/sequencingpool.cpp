@@ -27,9 +27,9 @@
 
 SequencingPool::SequencingPool(QString _outputFilename, QString _outputJsonFilename,
                              qint32 _maxThreads, QVector<LdDecodeMetaData *> &_ldDecodeMetaData, QVector<SourceVideo *> &_sourceVideos,
-                             bool _isCav, long _offset, QObject *parent)
+                             bool _isCav, bool _noPhase, long _offset, QObject *parent)
     : QObject(parent), outputFilename(_outputFilename), outputJsonFilename(_outputJsonFilename),
-      maxThreads(_maxThreads), isCav(_isCav), offset(_offset),
+      maxThreads(_maxThreads), isCav(_isCav), noPhase(_noPhase), offset(_offset),
       abort(false), ldDecodeMetaData(_ldDecodeMetaData), sourceVideos(_sourceVideos)
 {
 }
@@ -99,9 +99,10 @@ bool SequencingPool::process()
     return true;
 }
 
-void SequencingPool::getParameters(long& _offset,bool& _isCav)
+void SequencingPool::getParameters(long& _offset, bool& _isCav, bool& _noPhase)
 {
 	_isCav = isCav;
+	_noPhase = noPhase;
 	_offset = offset;
 }
 
