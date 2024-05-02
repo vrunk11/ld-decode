@@ -48,10 +48,11 @@ void Sequencer::run()
 	bool isPal = 0;
 	bool isCav = 0;
 	bool noPhase = 0;
+	bool blank = 0;
 	int nbFieldValid = 0;
 	VbiData vbiData;
 	
-	sequencingPool.getParameters(offset, isCav, noPhase);
+	sequencingPool.getParameters(offset, isCav, noPhase, blank);
 	
     while(!abort) {
         // Get the next field to process from the input file
@@ -72,10 +73,22 @@ void Sequencer::run()
 		{
 			nbFieldValid = 8;//write only 4 frame
 		}
+		qInfo() << "(Sequencer) nb_field_valid : " << nbFieldValid << " LastFrameNumber : " << sequencingPool.getLastFrameNumber() << " frame number : " << frameNumber;
+		qInfo() << "(Sequencer) f1 : " << vbiData.vbiNumber[0];
+		qInfo() << "(Sequencer) f2 : " << vbiData.vbiNumber[1];
+		qInfo() << "(Sequencer) f3 : " << vbiData.vbiNumber[2];
+		qInfo() << "(Sequencer) f4 : " << vbiData.vbiNumber[3];
+		qInfo() << "(Sequencer) f5 : " << vbiData.vbiNumber[4];
 		
 		//write each availeble field
 		for(int i=0;i <= nbFieldValid;i+=2)
 		{
+			if(blank)
+			{
+				blankVbi(sequenceSourceField[i],isPal,videoParameters[0]);
+				blankVbi(sequenceSourceField[i+1],isPal,videoParameters[0]);
+			}
+			
 			if(i != nbFieldValid || nbFieldValid <= 5)
 			{
 				//insert only if its possible
@@ -94,6 +107,7 @@ void Sequencer::run()
 	qInfo() << "(Sequencer) end of processing";
 }
 
+//analyse and attribute frame number to each frame
 void Sequencer::sequenceCheck(long frameNumber, bool isPal, bool noPhase, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters)
 {
 	int fieldTreated = 8;//4frame
@@ -102,6 +116,7 @@ void Sequencer::sequenceCheck(long frameNumber, bool isPal, bool noPhase, QVecto
 	int phaseId = 0;
 	int phaseId2 = 0;
 	int phaseOffset = 0;
+	bool endOfVideo = 0;
 	
 	if(maxThreads > 1)
 	{
@@ -117,82 +132,81 @@ void Sequencer::sequenceCheck(long frameNumber, bool isPal, bool noPhase, QVecto
 	//get latest frame number
 	int latestFrameNumber = sequencingPool.getLatestFrameNumber();
 	
-	//if wa are at the end treat the last frame
-	if((frameNumber + 5) >=  sequencingPool.getLastFrameNumber())
+	//if we are at the end treat the last frame
+	if((frameNumber + 4) >=  sequencingPool.getLastFrameNumber())//actual frame + 4 = 5 frame
 	{
-		fieldTreated = ((frameNumber + 5) - sequencingPool.getLastFrameNumber())*2;
+		fieldTreated = (5 - ((frameNumber + 4) - sequencingPool.getLastFrameNumber()))*2;
+		endOfVideo = 1;
+		qInfo() << "(sequence check) frame number : " << frameNumber << "  field treated : " << fieldTreated;
 	}
 	
 	//sequence analysis
 	for(int i = 0; i < fieldTreated;i+=2)
 	{
-		if((sequencingPool.getLastFrameNumber() - (frameNumber + (i/2))) >= 2)
+		//if phase check not deactivated
+		if(!noPhase && (i < (fieldTreated - (endOfVideo*2))))//disable sequence check on last frame (if endOfVideo = 1) then block 1 frame earlier)
 		{
-			//if phase check not deactivated
-			if(!noPhase)
+			phaseId = getPhaseId(sequenceSourceField[i], isPal , videoParameters[0]);
+			phaseId2 = getPhaseId(sequenceSourceField[i+2], isPal , videoParameters[0]);
+			
+			//check if there is chroma burst
+			if(phaseId != 0 && phaseId2 != 0)
 			{
-				phaseId = getPhaseId(sequenceSourceField[i], isPal , videoParameters[0]);
-				phaseId2 = getPhaseId(sequenceSourceField[i+2], isPal , videoParameters[0]);
+				phaseOffset = mesurePhaseOffset(isPal,phaseId,phaseId2);
 				
-				//check if there is chroma burst
-				if(phaseId != 0 && phaseId2 != 0)
+				if(isPal)
 				{
-					phaseOffset = mesurePhaseOffset(isPal,phaseId,phaseId2);
-					
-					if(isPal)
+					if(phaseOffset == 0)
 					{
-						if(phaseOffset == 0)
-						{
-							vbiData->vbiNumber[i/2] = latestFrameNumber -1;//same number as last frame (asuming repeated frame)
-							qInfo() << "(sequence check) frame repeat detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
-						}
-						else if(phaseOffset == 1)
-						{
-							vbiData->vbiNumber[i/2] = latestFrameNumber;
-							latestFrameNumber++;
-						}
-						else if(phaseOffset == 2)
-						{
-							vbiData->vbiNumber[i/2] = latestFrameNumber +1;
-							latestFrameNumber += 2;
-							qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
-						}
-						else if(phaseOffset == 3)
-						{
-							vbiData->vbiNumber[i/2] = latestFrameNumber +2;
-							latestFrameNumber += 3;
-							qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
-						}
+						vbiData->vbiNumber[i/2] = latestFrameNumber -1;//same number as last frame (asuming repeated frame)
+						qInfo() << "(sequence check) frame repeat detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
 					}
-					else//ntsc
+					else if(phaseOffset == 1)
 					{
-						if(phaseOffset == 0)
-						{
-							//asume a skip of 1 frame
-							vbiData->vbiNumber[i/2] = latestFrameNumber +1;
-							latestFrameNumber += 2;
-							qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
-						}
-						else if(phaseOffset == 1)
-						{
-							vbiData->vbiNumber[i/2] = latestFrameNumber;
-							latestFrameNumber++;
-						}
+						vbiData->vbiNumber[i/2] = latestFrameNumber;
+						latestFrameNumber++;
+					}
+					else if(phaseOffset == 2)
+					{
+						vbiData->vbiNumber[i/2] = latestFrameNumber +1;
+						latestFrameNumber += 2;
+						qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
+					}
+					else if(phaseOffset == 3)
+					{
+						vbiData->vbiNumber[i/2] = latestFrameNumber +2;
+						latestFrameNumber += 3;
+						qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
 					}
 				}
-				else
+				else//ntsc
 				{
-					vbiData->vbiNumber[i/2] = latestFrameNumber;
-					latestFrameNumber++;
-					qInfo() << "(sequence check) no phase detected";
+					if(phaseOffset == 0)
+					{
+						//asume a skip of 1 frame
+						vbiData->vbiNumber[i/2] = latestFrameNumber +1;
+						latestFrameNumber += 2;
+						qInfo() << "(sequence check) skip detected with phase (" << phaseId << "/" << phaseId2 << ") at frame " << frameNumber + (i/2);
+					}
+					else if(phaseOffset == 1)
+					{
+						vbiData->vbiNumber[i/2] = latestFrameNumber;
+						latestFrameNumber++;
+					}
 				}
 			}
 			else
 			{
 				vbiData->vbiNumber[i/2] = latestFrameNumber;
 				latestFrameNumber++;
-				qInfo() << "(sequence check) phase detection disabled";
+				qInfo() << "(sequence check) no phase detected";
 			}
+		}
+		else
+		{
+			vbiData->vbiNumber[i/2] = latestFrameNumber;
+			latestFrameNumber++;
+			qInfo() << "(sequence check) phase detection disabled";
 		}
 	}
 	
@@ -408,6 +422,7 @@ int Sequencer::getPhaseId(QVector<SourceVideo::Data> sequenceSourceField, int is
 	
 	if(isPal)
 	{
+		//get black levels from video to be compatible with chroma file
 		blackLvl = sequenceSourceField[0][(videoParameters.fieldWidth * (5)) + videoParameters.colourBurstStart - 6];
 		
 		//read 2 line to compare value
@@ -498,4 +513,21 @@ int Sequencer::mesurePhaseOffset(int isPal, int phaseId, int phaseId2)
 		}
 	}
 	return 0;
+}
+
+void Sequencer::blankVbi(QVector<SourceVideo::Data>& fieldData, int isPal, LdDecodeMetaData::VideoParameters& videoParameters)
+{
+	//get black levels from video to be compatible with chroma file
+	int blackLvl = fieldData[0][(videoParameters.fieldWidth * (12)) + videoParameters.colourBurstStart - 6];
+	
+	for(int i = videoParameters.activeVideoStart;i <= (videoParameters.fieldWidth - 6);i++)
+	{
+		if(!isPal)
+		{
+			fieldData[0].replace(i + (videoParameters.fieldWidth *10),blackLvl);
+		}
+		fieldData[0].replace(i + (videoParameters.fieldWidth *15),blackLvl);
+		fieldData[0].replace(i + (videoParameters.fieldWidth *16),blackLvl);
+		fieldData[0].replace(i + (videoParameters.fieldWidth *17),blackLvl);
+	}
 }

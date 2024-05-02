@@ -59,6 +59,7 @@ protected:
 	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData *bitCode,bool isCav,const LdDecodeMetaData::VideoParameters& videoParameters);
 	int getPhaseId(QVector<SourceVideo::Data> sequenceSourceField, int isPal, LdDecodeMetaData::VideoParameters& videoParameters);
 	int mesurePhaseOffset(int isPal, int phaseId,int phaseId2);
+	void blankVbi(QVector<SourceVideo::Data>& fieldData, int isPal, LdDecodeMetaData::VideoParameters& videoParameters);
 
 private:
     // Sequencing pool

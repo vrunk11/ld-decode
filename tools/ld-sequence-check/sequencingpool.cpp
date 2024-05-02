@@ -27,9 +27,9 @@
 
 SequencingPool::SequencingPool(QString _outputFilename, QString _outputJsonFilename,
                              qint32 _maxThreads, QVector<LdDecodeMetaData *> &_ldDecodeMetaData, QVector<SourceVideo *> &_sourceVideos,
-                             bool _isCav, bool _noPhase, long _offset, QObject *parent)
+                             bool _isCav, bool _noPhase, bool _blank, long _offset, QObject *parent)
     : QObject(parent), outputFilename(_outputFilename), outputJsonFilename(_outputJsonFilename),
-      maxThreads(_maxThreads), isCav(_isCav), noPhase(_noPhase), offset(_offset),
+      maxThreads(_maxThreads), isCav(_isCav), noPhase(_noPhase), blank(_blank), offset(_offset),
       abort(false), ldDecodeMetaData(_ldDecodeMetaData), sourceVideos(_sourceVideos)
 {
 }
@@ -99,10 +99,11 @@ bool SequencingPool::process()
     return true;
 }
 
-void SequencingPool::getParameters(long& _offset, bool& _isCav, bool& _noPhase)
+void SequencingPool::getParameters(long& _offset, bool& _isCav, bool& _noPhase, bool& _blank)
 {
 	_isCav = isCav;
 	_noPhase = noPhase;
+	_blank = blank;
 	_offset = offset;
 }
 
@@ -117,18 +118,10 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
     QMutexLocker locker(&inputMutex);
 	
 	int precedingThread = idThread -1;
-
-    if (inputFrameNumber > lastFrameNumber) {
-        // No more input frames
-        return false;
-    }
+	int nbFrameValid;
 	
-	nbFieldValid = (lastFrameNumber - inputFrameNumber)*2;
-	
-	if(nbFieldValid > 10)
-	{
-		nbFieldValid = 10;
-	}
+	nbFrameValid = (lastFrameNumber - (inputFrameNumber))+1;//-1 cause curent frame isnt processed yet
+	qDebug() << "\nnbvalid #" << nbFrameValid;
 	
 	if(maxThreads > 1)
 	{
@@ -137,20 +130,31 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
 			precedingThread = maxThreads -1;
 		}
 		threadOk[idThread] = 1;//waiting
-		while(threadOk[precedingThread] < 1 && frameNumber > 1){}//wait other threads to finish
+		while(threadOk[precedingThread] < 1 && inputFrameNumber > 1){}//wait other threads to finish
 		threadOk[idThread] = 2;//getting frame number
 	}
 	
-    frameNumber = inputFrameNumber;
-    inputFrameNumber+=4;
-	
 	threadOk[idThread] = 3;//getting frame number ok
+	
+	if (inputFrameNumber >= lastFrameNumber) {
+        // No more input frames
+        return false;
+    }
+	
+	if(nbFrameValid >= 5)
+	{
+		nbFieldValid = 10;
+	}
+	else
+	{
+		nbFieldValid = nbFrameValid*2;
+	}
 
     // Determine the number of sources available (included padded sources)
     qint32 numberOfSources = sourceVideos.size();
 
     qDebug().nospace() << "Processing sequential frame number #" <<
-                          frameNumber << " to " << frameNumber + 4 << "/" << lastFrameNumber << " from " << numberOfSources << " possible source(s)";
+                          frameNumber << " to " << frameNumber + (nbFieldValid/2) << "/" << lastFrameNumber << " from " << numberOfSources << " possible source(s)";
 	
     // Prepare the vectors
     for(int i = 0;i <= nbFieldValid;i+=2)
@@ -170,8 +174,8 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
 			
 			for (qint32 sourceNo = 0; sourceNo < numberOfSources; sourceNo++) {
 				// Determine the fields for the input frame
-				fieldNumber[i][sourceNo] = (frameNumber * 2) -1;
-				fieldNumber[i+1][sourceNo] = (frameNumber * 2);
+				fieldNumber[i][sourceNo] = (inputFrameNumber * 2) -1;
+				fieldNumber[i+1][sourceNo] = (inputFrameNumber * 2);
 				
 				// Fetch the input data (get the fields in TBC sequence order to save seeking)
 				if (fieldNumber[i][sourceNo] < fieldNumber[i+1][sourceNo]) {
@@ -187,6 +191,18 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
 				videoParameters[sourceNo] = ldDecodeMetaData[sourceNo]->getVideoParameters();
 			}
 		}
+	}
+	
+	frameNumber = inputFrameNumber;
+	
+	if(nbFrameValid >= 5)
+	{
+		inputFrameNumber+=4;
+	}
+	else
+	{
+		inputFrameNumber+=(nbFieldValid/2);
+		qDebug().nospace() << "nbframevalid #" << (nbFieldValid/2);
 	}
 	
     return true;
