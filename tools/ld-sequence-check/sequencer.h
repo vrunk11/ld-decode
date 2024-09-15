@@ -41,6 +41,7 @@ class Sequencer : public QThread
     Q_OBJECT
 public:
     explicit Sequencer(int _idThread,QVector<qint32>& _threadOk, int _maxThreads,QAtomicInt& _abort, SequencingPool& _sequencingPool, QObject *parent = nullptr);
+	static qint32 decode24BitOldClv(LdDecodeMetaData::Vbi vbi, bool isPal);
 
 protected:
 	//data used for 24 bit manchester encoding
@@ -54,12 +55,12 @@ protected:
         long vbiNumber[5];//number for each frame
     };
     void run() override;
-	void sequenceCheck(long frameNumber, bool isPal, bool noPhase, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters);
+	void sequenceCheck(long frameNumber, long oldClvStart, long oldClvLatestTime, bool isPal, bool noPhase, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters);
 	int generate24BitCode(VbiData* vbiData,long frameNumber,bool isCav,bool isPal);
-	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData *bitCode,bool isCav,const LdDecodeMetaData::VideoParameters& videoParameters);
+	void encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData *bitCode,bool isCav, const LdDecodeMetaData::VideoParameters& videoParameters);
 	int getPhaseId(QVector<SourceVideo::Data> sequenceSourceField, int isPal, LdDecodeMetaData::VideoParameters& videoParameters);
-	int mesurePhaseOffset(int isPal, int phaseId,int phaseId2);
-	void blankVbi(QVector<SourceVideo::Data>& fieldData, int isPal, LdDecodeMetaData::VideoParameters& videoParameters);
+	int mesurePhaseOffset(bool isPal, int phaseId,int phaseId2);
+	void blankVbi(QVector<SourceVideo::Data>& fieldData, int isPal, bool isOldClv, LdDecodeMetaData::VideoParameters& videoParameters);
 
 private:
     // Sequencing pool

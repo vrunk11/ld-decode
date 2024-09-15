@@ -24,6 +24,7 @@
 
 #include "sequencer.h"
 #include "sequencingpool.h"
+#include <sstream>
 
 Sequencer::Sequencer(int _idThread,QVector<qint32>& _threadOk, int _maxThreads, QAtomicInt& _abort, SequencingPool& _sequencingPool, QObject *parent)
     : QThread(parent), idThread(_idThread), threadOk(_threadOk), maxThreads(_maxThreads), abort(_abort), sequencingPool(_sequencingPool)
@@ -35,6 +36,7 @@ void Sequencer::run()
     // Variables for getInputFrame
     qint32 frameNumber;
 	
+	//[frameFromTheSequence][source]
 	QVector<QVector<qint32>> sequenceFieldSeqNo;
 	QVector<QVector<SourceVideo::Data>> sequenceSourceField;
 	QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata;
@@ -48,11 +50,15 @@ void Sequencer::run()
 	bool isPal = 0;
 	bool isCav = 0;
 	bool noPhase = 0;
+	bool isOldClv = 0;
 	bool blank = 0;
 	int nbFieldValid = 0;
 	VbiData vbiData;
 	
-	sequencingPool.getParameters(offset, isCav, noPhase, blank);
+	long oldClvStart = -1;
+	long oldClvLatestTime = -1;
+	
+	sequencingPool.getParameters(offset, isCav, noPhase, isOldClv, blank);
 	
     while(!abort) {
         // Get the next field to process from the input file
@@ -66,35 +72,34 @@ void Sequencer::run()
 		isPal = (videoParameters[0].system == PAL) ? 1 : 0 ;
 		
 		//analyse and set number for each frame
-		Sequencer::sequenceCheck(frameNumber, isPal, noPhase, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata, &vbiData, videoParameters);
+		Sequencer::sequenceCheck(frameNumber, oldClvStart, oldClvLatestTime, isPal, noPhase, sequenceFieldSeqNo, sequenceSourceField, sequenceFieldMetadata, &vbiData, videoParameters);
 		
 		//if not at the end
-		if((sequencingPool.getLastFrameNumber() - frameNumber) > 5)
+		if((sequencingPool.getLastFrameNumber() - frameNumber) >= 5)
 		{
 			nbFieldValid = 8;//write only 4 frame
 		}
-		qInfo() << "(Sequencer) nb_field_valid : " << nbFieldValid << " LastFrameNumber : " << sequencingPool.getLastFrameNumber() << " frame number : " << frameNumber;
-		qInfo() << "(Sequencer) f1 : " << vbiData.vbiNumber[0];
-		qInfo() << "(Sequencer) f2 : " << vbiData.vbiNumber[1];
-		qInfo() << "(Sequencer) f3 : " << vbiData.vbiNumber[2];
-		qInfo() << "(Sequencer) f4 : " << vbiData.vbiNumber[3];
-		qInfo() << "(Sequencer) f5 : " << vbiData.vbiNumber[4];
-		
+		//qInfo() << "(Sequencer) nb_field_valid : " << nbFieldValid << " LastFrameNumber : " << sequencingPool.getLastFrameNumber() << " frame number : " << frameNumber;
+		//qInfo() << "(Sequencer) f1 : " << vbiData.vbiNumber[0];
+		//qInfo() << "(Sequencer) f2 : " << vbiData.vbiNumber[1];
+		//qInfo() << "(Sequencer) f3 : " << vbiData.vbiNumber[2];
+		//qInfo() << "(Sequencer) f4 : " << vbiData.vbiNumber[3];
+		//qInfo() << "(Sequencer) f5 : " << vbiData.vbiNumber[4];
 		//write each availeble field
-		for(int i=0;i <= nbFieldValid;i+=2)
+		for(int i=0;i < nbFieldValid;i+=2)
 		{
 			if(blank)
 			{
-				blankVbi(sequenceSourceField[i],isPal,videoParameters[0]);
-				blankVbi(sequenceSourceField[i+1],isPal,videoParameters[0]);
+				blankVbi(sequenceSourceField[i], isPal, isOldClv, videoParameters[0]);
+				blankVbi(sequenceSourceField[i+1], isPal, isOldClv, videoParameters[0]);
 			}
 			
-			if(i != nbFieldValid || nbFieldValid <= 5)
+			if(i != nbFieldValid || nbFieldValid <= 10)
 			{
 				//insert only if its possible
 				if(frameNumber +(i/2) + offset > 0)
 				{
-					if(!Sequencer::generate24BitCode(&vbiData,vbiData.vbiNumber[i/2] + offset,isCav,isPal))
+					if(!Sequencer::generate24BitCode(&vbiData,vbiData.vbiNumber[i/2] + offset + sequencingPool.getOldClvOffset()[0],isCav,isPal))
 					{
 						Sequencer::encode24BitManchester(sequenceSourceField[i],&vbiData,isCav,videoParameters[0]);
 					}
@@ -108,7 +113,7 @@ void Sequencer::run()
 }
 
 //analyse and attribute frame number to each frame
-void Sequencer::sequenceCheck(long frameNumber, bool isPal, bool noPhase, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters)
+void Sequencer::sequenceCheck(long frameNumber, long oldClvStart, long oldClvLatestTime, bool isPal, bool noPhase, QVector<QVector<qint32>> sequenceFieldSeqNo, QVector<QVector<SourceVideo::Data>> sequenceSourceField, QVector<QVector<LdDecodeMetaData::Field>> sequenceFieldMetadata, VbiData* vbiData, QVector<LdDecodeMetaData::VideoParameters>& videoParameters)
 {
 	int fieldTreated = 8;//4frame
 	int precedingThread = Sequencer::idThread -1;
@@ -128,6 +133,23 @@ void Sequencer::sequenceCheck(long frameNumber, bool isPal, bool noPhase, QVecto
 		while(threadOk[precedingThread] < 6 && frameNumber > 1){}//wait other threads to finish
 		threadOk[idThread] = 5;//running
 	}
+	
+	if(oldClvStart == -1)
+	{
+		oldClvStart = decode24BitOldClv(sequenceFieldMetadata[0][0].vbi, isPal);
+		oldClvLatestTime = oldClvStart;
+	}
+	
+	if(oldClvLatestTime != -1)
+	{	
+		const long time_tmp = decode24BitOldClv(sequenceFieldMetadata[0][0].vbi, isPal);
+		if(time_tmp > oldClvLatestTime)
+		{
+			oldClvLatestTime = time_tmp;
+		}
+	}
+	
+	qInfo() << "vbi minute :" << decode24BitOldClv(sequenceFieldMetadata[0][0].vbi, isPal);
 	
 	//get latest frame number
 	int latestFrameNumber = sequencingPool.getLatestFrameNumber();
@@ -355,7 +377,7 @@ int Sequencer::generate24BitCode(VbiData* vbiData,long frameNumber,bool isCav,bo
 }
 
 //encode and write in the vbi
-void Sequencer::encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData* bitCode,bool isCav,const LdDecodeMetaData::VideoParameters& videoParameters)
+void Sequencer::encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiData* bitCode,bool isCav, const LdDecodeMetaData::VideoParameters& videoParameters)
 {
 	// Get the number of samples for 2µs
 	long sizeBits = (videoParameters.sampleRate / 1000000) * 2;
@@ -380,8 +402,7 @@ void Sequencer::encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiD
 		bitValue[4] = bitCode.dataL17F2[i];
 		bitValue[5] = bitCode.dataL18F2[i];*/
 		
-		//for each line
-		for(int b = isCav;b < 3;b++)
+		for(int b = isCav; b < 3;b++)
 		{
 			//bit = 1
 			if(bitValue[b])
@@ -410,6 +431,49 @@ void Sequencer::encode24BitManchester(QVector<SourceVideo::Data> &fieldData,VbiD
 			}
 		}
 	}
+}
+
+qint32 Sequencer::decode24BitOldClv(LdDecodeMetaData::Vbi vbi, bool isPal)
+{
+	qint32 frame;
+	qint32 vbiCode;
+	
+	if(vbi.vbiData[1] != 0)
+	{
+		vbiCode = vbi.vbiData[1];
+	}
+	else if(vbi.vbiData[2] != 0)
+	{
+		vbiCode = vbi.vbiData[2];
+	}
+	else
+	{
+		return -1;
+	}
+	
+	//decimal to exadecimal
+	std::stringstream ss;
+	ss << std::hex << vbiCode;
+	std::string vbiStr ( ss.str() );
+	
+	if(vbiStr[0] != 'f' || vbiStr[2] != 'd')
+	{
+		return -1;
+	}
+	
+	if(isPal)
+	{
+		frame = (vbiStr[1] - '0')*(3600*25);//hours
+		frame += (vbiStr[4] - '0')*(600*25);//x0 minute
+		frame += (vbiStr[5] - '0')*(60*25);//0x minute
+	}
+	else
+	{
+		frame = (vbiStr[1] - '0')*(3600*30);//hours
+		frame += (vbiStr[4] - '0')*(600*30);//x0 minute
+		frame += (vbiStr[5] - '0')*(60*30);//0x minute
+	}
+	return frame;
 }
 
 //get phase from chroma burst
@@ -484,11 +548,12 @@ int Sequencer::getPhaseId(QVector<SourceVideo::Data> sequenceSourceField, int is
 			qInfo() << "(phaseID) no burst detected";
 		}
 	}
+	//qInfo() << "(phaseID) phase = " << phaseId;
 	return phaseId;
 }
 
 //get phase offset
-int Sequencer::mesurePhaseOffset(int isPal, int phaseId, int phaseId2)
+int Sequencer::mesurePhaseOffset(bool isPal, int phaseId, int phaseId2)
 {
 	if(isPal)
 	{
@@ -515,7 +580,7 @@ int Sequencer::mesurePhaseOffset(int isPal, int phaseId, int phaseId2)
 	return 0;
 }
 
-void Sequencer::blankVbi(QVector<SourceVideo::Data>& fieldData, int isPal, LdDecodeMetaData::VideoParameters& videoParameters)
+void Sequencer::blankVbi(QVector<SourceVideo::Data>& fieldData, int isPal, bool isOldClv, LdDecodeMetaData::VideoParameters& videoParameters)
 {
 	//get black levels from video to be compatible with chroma file
 	int blackLvl = fieldData[0][(videoParameters.fieldWidth * (12)) + videoParameters.colourBurstStart - 6];
@@ -527,7 +592,10 @@ void Sequencer::blankVbi(QVector<SourceVideo::Data>& fieldData, int isPal, LdDec
 			fieldData[0].replace(i + (videoParameters.fieldWidth *10),blackLvl);
 		}
 		fieldData[0].replace(i + (videoParameters.fieldWidth *15),blackLvl);
-		fieldData[0].replace(i + (videoParameters.fieldWidth *16),blackLvl);
-		fieldData[0].replace(i + (videoParameters.fieldWidth *17),blackLvl);
+		if(!isOldClv)
+		{
+			fieldData[0].replace(i + (videoParameters.fieldWidth *16),blackLvl);
+			fieldData[0].replace(i + (videoParameters.fieldWidth *17),blackLvl);
+		}
 	}
 }

@@ -41,12 +41,12 @@ class SequencingPool : public QObject
 public:
     explicit SequencingPool(QString _outputFilename, QString _outputJsonFilename,
                            qint32 _maxThreads, QVector<LdDecodeMetaData *> &_ldDecodeMetaData, QVector<SourceVideo *> &_sourceVideos,
-                           bool _isCav, bool _noPhase, bool _blank, long _offset, QObject *parent = nullptr);
+                           bool _isCav, bool _noPhase, bool _isOldClv, bool _blank, long _offset, QObject *parent = nullptr);
 
     bool process();
 
     // Member functions used by worker threads
-	void getParameters(long& _offset, bool& _isCav, bool& _noPhase, bool& blank);
+	void getParameters(long& _offset, bool& _isCav, bool& _noPhase, bool& _isOldClv, bool& blank);
 	
 	bool getInputFrameSequence(int idThread,qint32& frameNumber,int& nbFieldValid,
                        QVector<QVector<qint32>> &fieldNumber, QVector<QVector<SourceVideo::Data>> &fieldVideoData, QVector<QVector<LdDecodeMetaData::Field>> &fieldMetadata,
@@ -57,6 +57,7 @@ public:
                         qint32 firstFieldSeqNo, qint32 secondFieldSeqNo);
 	int getLastFrameNumber();
 	int getLatestFrameNumber();
+	QVector<qint32> getOldClvOffset();
 	void setLatestFrameNumber(int value);
 
 private:
@@ -66,6 +67,7 @@ private:
 	QVector<qint32> threadOk;
     bool isCav;
 	bool noPhase;
+	bool isOldClv;
 	bool blank;
     long offset;
     QElapsedTimer totalTimer;
@@ -80,6 +82,7 @@ private:
     qint32 lastFrameNumber;
     QVector<LdDecodeMetaData *> &ldDecodeMetaData;
     QVector<SourceVideo *> &sourceVideos;
+	QVector<qint32> oldClvOffset;
 
     // Output stream information (all guarded by outputMutex while threads are running)
     QMutex outputMutex;

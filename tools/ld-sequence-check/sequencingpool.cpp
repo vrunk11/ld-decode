@@ -27,9 +27,9 @@
 
 SequencingPool::SequencingPool(QString _outputFilename, QString _outputJsonFilename,
                              qint32 _maxThreads, QVector<LdDecodeMetaData *> &_ldDecodeMetaData, QVector<SourceVideo *> &_sourceVideos,
-                             bool _isCav, bool _noPhase, bool _blank, long _offset, QObject *parent)
+                             bool _isCav, bool _noPhase, bool _isOldClv, bool _blank, long _offset, QObject *parent)
     : QObject(parent), outputFilename(_outputFilename), outputJsonFilename(_outputJsonFilename),
-      maxThreads(_maxThreads), isCav(_isCav), noPhase(_noPhase), blank(_blank), offset(_offset),
+      maxThreads(_maxThreads), isCav(_isCav), noPhase(_noPhase), isOldClv(_isOldClv), blank(_blank), offset(_offset),
       abort(false), ldDecodeMetaData(_ldDecodeMetaData), sourceVideos(_sourceVideos)
 {
 }
@@ -61,6 +61,40 @@ bool SequencingPool::process()
     outputFrameNumber = 1;
     lastFrameNumber = ldDecodeMetaData[0]->getNumberOfFrames();
 	latestFrameNumber = 0;
+	oldClvOffset.resize(ldDecodeMetaData.size());
+	
+	if(isOldClv)
+	{
+		for(int i = 0;i < ldDecodeMetaData.size();i++)
+		{
+			const bool isPal = (ldDecodeMetaData[0]->getVideoParameters().system == PAL) ? 1 : 0 ;
+			int oldClvStart = -1;
+			const int nbFieldMinute = (60*(25+((!isPal)*5)))*2;
+			bool framePosFound = false;
+			for(int y = 0;y < nbFieldMinute;y++)//25 frame is pal otherwise 30
+			{
+				if(oldClvStart <= -1)
+				{
+					oldClvStart = Sequencer::decode24BitOldClv(ldDecodeMetaData[i]->getField(y+1).vbi, isPal)*2;
+				}
+				else
+				{
+					if(Sequencer::decode24BitOldClv(ldDecodeMetaData[i]->getField(y+1).vbi, isPal)*2 == (oldClvStart + nbFieldMinute))
+					{
+						oldClvOffset[i] = ((oldClvStart + nbFieldMinute)/2) - (y/2);
+						framePosFound = true;
+						qInfo() << "source " << i << " have an offset off (" << oldClvOffset[i] << ")";
+						break;
+					}
+				}
+			}
+			if(oldClvStart < 0 || !framePosFound )
+			{
+				oldClvOffset[i] = 0;
+			}
+		}
+	}
+	
 	threadOk.resize(maxThreads);
     totalTimer.start();
 
@@ -99,12 +133,13 @@ bool SequencingPool::process()
     return true;
 }
 
-void SequencingPool::getParameters(long& _offset, bool& _isCav, bool& _noPhase, bool& _blank)
+void SequencingPool::getParameters(long& _offset, bool& _isCav, bool& _noPhase, bool& _isOldClv, bool& _blank)
 {
 	_isCav = isCav;
 	_noPhase = noPhase;
 	_blank = blank;
 	_offset = offset;
+	_isOldClv = isOldClv;
 }
 
 // Get the next frame that needs processing from the input.
@@ -129,12 +164,12 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
 		{
 			precedingThread = maxThreads -1;
 		}
+		qDebug() << "idThread : " << idThread  << " waiting";
 		threadOk[idThread] = 1;//waiting
-		while(threadOk[precedingThread] < 1 && inputFrameNumber > 1){}//wait other threads to finish
+		while(threadOk[precedingThread] < 1 && inputFrameNumber > 1){}//wait other threads to finish / dont wait if first frame
+		qDebug() << "idThread : " << idThread  << " reading frame number";
 		threadOk[idThread] = 2;//getting frame number
 	}
-	
-	threadOk[idThread] = 3;//getting frame number ok
 	
 	if (inputFrameNumber >= lastFrameNumber) {
         // No more input frames
@@ -154,12 +189,12 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
     qint32 numberOfSources = sourceVideos.size();
 
     qDebug().nospace() << "Processing sequential frame number #" <<
-                          frameNumber << " to " << frameNumber + (nbFieldValid/2) << "/" << lastFrameNumber << " from " << numberOfSources << " possible source(s)";
+                          inputFrameNumber << " to " << inputFrameNumber + (nbFieldValid/2) << "/" << lastFrameNumber << " from " << numberOfSources << " possible source(s)";
 	
     // Prepare the vectors
-    for(int i = 0;i <= nbFieldValid;i+=2)
+    for(int i = 0;i < nbFieldValid;i+=2)
 	{
-		if(i != nbFieldValid || nbFieldValid <= 5)
+		if(i != nbFieldValid || nbFieldValid <= 10)
 		{
 			fieldNumber[i].resize(numberOfSources);
 			fieldNumber[i+1].resize(numberOfSources);
@@ -194,7 +229,7 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
 	}
 	
 	frameNumber = inputFrameNumber;
-	
+
 	if(nbFrameValid >= 5)
 	{
 		inputFrameNumber+=4;
@@ -204,6 +239,8 @@ bool SequencingPool::getInputFrameSequence(int idThread, qint32& frameNumber,int
 		inputFrameNumber+=(nbFieldValid/2);
 		qDebug().nospace() << "nbframevalid #" << (nbFieldValid/2);
 	}
+	qDebug() << "idThread : " << idThread  << " frame ok : " << inputFrameNumber << "/" << frameNumber;
+	threadOk[idThread] = 3;//getting frame number ok
 	
     return true;
 }
@@ -278,6 +315,11 @@ int SequencingPool::getLastFrameNumber()
 int SequencingPool::getLatestFrameNumber()
 {
 	return latestFrameNumber;
+}
+
+QVector<qint32> SequencingPool::getOldClvOffset()
+{
+	return oldClvOffset;
 }
 
 void SequencingPool::setLatestFrameNumber(int value)

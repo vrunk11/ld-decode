@@ -90,6 +90,11 @@ int main(int argc, char *argv[])
                                        QCoreApplication::translate("main", "disable chroma phase analysis"));
     parser.addOption(setNoPhaseOption);
 	
+	// Option to fix old clv disc (--old-clv)
+    QCommandLineOption setOldClvOption(QStringList() << "old-clv",
+                                       QCoreApplication::translate("main", "fix old clv disc"));
+    parser.addOption(setOldClvOption);
+	
 	// Option to blank vbi (--blank)
     QCommandLineOption setBlankOption(QStringList() << "blank",
                                        QCoreApplication::translate("main", "blank previous VBI data"));
@@ -126,11 +131,17 @@ int main(int argc, char *argv[])
     bool reverse = parser.isSet(setReverseOption);
 	bool isCav = parser.isSet(setIsCavOption);
 	bool noPhase = parser.isSet(setNoPhaseOption);
+	bool isOldClv = parser.isSet(setOldClvOption);
 	bool blank = parser.isSet(setBlankOption);
 	long offset = 0;
+	
 	if(parser.isSet(setOffsetOption))
 	{
 		offset = parser.value(setOffsetOption).toLong();
+	}
+	if(isOldClv)
+	{
+		isCav = false;
 	}
 
     // Get the arguments from the parser
@@ -306,7 +317,7 @@ int main(int argc, char *argv[])
     qInfo() << "Initial source checks are ok and sources are loaded";
     qint32 result = 0;
     SequencingPool sequencingPool(outputFilename, outputJsonFilename, maxThreads,
-                                ldDecodeMetaData, sourceVideos, isCav, noPhase, blank, offset);
+                                ldDecodeMetaData, sourceVideos, isCav, noPhase, isOldClv, blank, offset);
     if (!sequencingPool.process()) result = 1;
 
     // Close open source video files
