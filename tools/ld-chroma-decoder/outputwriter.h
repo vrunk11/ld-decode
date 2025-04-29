@@ -29,6 +29,7 @@
 #include <QtGlobal>
 #include <QByteArray>
 #include <QVector>
+#include <soxr.h>
 
 #include "lddecodemetadata.h"
 
@@ -53,6 +54,8 @@ public:
         qint32 paddingAmount = 8;
         PixelFormat pixelFormat = RGB48;
         bool outputY4m = false;
+        bool useResampling = true;
+		qint32 resampleWidth = 646;
     };
 
     // Set the output configuration, and adjust the VideoParameters to suit.
@@ -88,6 +91,7 @@ private:
     qint32 activeWidth;
     qint32 activeHeight;
     qint32 outputHeight;
+	qint32 outputWidth;
 
     // Get a string representing the pixel format
     const char *getPixelName() const;

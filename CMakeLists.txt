@@ -104,6 +104,9 @@ else()
     find_library(FFTW_LIBRARY ${FFTW3_LIBRARIES} ${FFTW3_LIBRARY_DIRS})
 endif()
 
+# Find and link libsoxr for high quality resampling
+find_package(Soxr REQUIRED)
+
 # Get the Git branch and revision
 
 execute_process(

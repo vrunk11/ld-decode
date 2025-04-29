@@ -20,7 +20,7 @@ add_library(lddecode-chroma STATIC
 
 target_include_directories(lddecode-chroma PUBLIC .)
 
-target_link_libraries(lddecode-chroma PRIVATE Qt::Core ${FFTW_LIBRARY} lddecode-library)
+target_link_libraries(lddecode-chroma PRIVATE Qt::Core ${FFTW_LIBRARY} lddecode-library Soxr::soxr)
 
 target_include_directories(lddecode-chroma PRIVATE ${FFTW_INCLUDE_DIR})
 
@@ -39,6 +39,6 @@ set_target_properties(lddecode-chroma PROPERTIES AUTOMOC ON)
 
 target_include_directories(ld-chroma-decoder PRIVATE ${FFTW_INCLUDE_DIR})
 
-target_link_libraries(ld-chroma-decoder PRIVATE Qt::Core lddecode-library lddecode-chroma)
+target_link_libraries(ld-chroma-decoder PRIVATE Qt::Core lddecode-library lddecode-chroma Soxr::soxr)
 
 install(TARGETS ld-chroma-decoder)

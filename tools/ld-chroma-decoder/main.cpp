@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     setBinaryMode();
     // Install the local debug message handler
     setDebug(true);
-    qInstallMessageHandler(debugOutputHandler);
+    //qInstallMessageHandler(debugOutputHandler);
 
     QCoreApplication a(argc, argv);
 
@@ -175,7 +175,19 @@ int main(int argc, char *argv[])
     QCommandLineOption setBwModeOption(QStringList() << "b" << "blackandwhite",
                                        QCoreApplication::translate("main", "Output in black and white"));
     parser.addOption(setBwModeOption);
-
+	
+	// Option to select resizing format
+    QCommandLineOption outputResampleOption(QStringList() << "size",
+                                       QCoreApplication::translate("main", "Select output size : (square,tvl,native,dv,custom) (default : native)"),
+                                       QCoreApplication::translate("main", "size-format"));
+    parser.addOption(outputResampleOption);
+	
+	// Option to select a size value
+    QCommandLineOption outputResampleValueOption(QStringList() << "size-v" << "size-value",
+                                       QCoreApplication::translate("main", "Select size value : (quantity in tvl/pixel depending on format)"),
+                                       QCoreApplication::translate("main", "number"));
+    parser.addOption(outputResampleValueOption);
+	
     // Option to select output padding (-pad)
     QCommandLineOption outputPaddingOption(QStringList() << "pad" << "output-padding",
                                        QCoreApplication::translate("main", "Pad the output frame to a multiple of this many pixels on both axes (1 means no padding, maximum is 32)"),
@@ -539,6 +551,60 @@ int main(int argc, char *argv[])
             outputConfig.paddingAmount = 8;
         }
     }
+	
+	if (parser.isSet(outputResampleOption))
+	{
+		outputConfig.useResampling = true;
+		QString sizeFormatName = parser.value(outputResampleOption);
+		if(sizeFormatName == "square")
+		{
+			if(metaData.getVideoParameters().system == NTSC)
+			{
+				outputConfig.resampleWidth = 646;
+			}
+			else
+			{
+				outputConfig.resampleWidth = 762;
+			}
+		}
+		else if(sizeFormatName == "custom" && parser.isSet(outputResampleValueOption))
+		{
+			if (parser.value(outputResampleValueOption).toInt() < 1) {
+            // Quit with error
+            qCritical("Specified size must be greater than zero");
+            return -1;
+			}
+			outputConfig.resampleWidth = parser.value(outputResampleValueOption).toInt();
+		}
+		else if(sizeFormatName == "tvl" && parser.isSet(outputResampleValueOption))
+		{
+			if (parser.value(outputResampleValueOption).toInt() < 1) {
+            // Quit with error
+            qCritical("Specified size must be greater than zero");
+            return -1;
+			}
+			if(metaData.getVideoParameters().isWidescreen)
+			{
+				outputConfig.resampleWidth = parser.value(outputResampleValueOption).toInt()*1.77;
+			}
+			else
+			{
+				outputConfig.resampleWidth = parser.value(outputResampleValueOption).toInt()*1.33;
+			}
+		}
+		else if(sizeFormatName == "dv" && parser.isSet(outputResampleValueOption))
+		{
+			outputConfig.resampleWidth = 720;
+		}
+		else
+		{
+			outputConfig.resampleWidth = metaData.getVideoParameters().activeVideoEnd - metaData.getVideoParameters().activeVideoStart;
+		}
+	}
+	else
+	{
+		outputConfig.useResampling = false;
+	}
     
     // Perform the processing
     DecoderPool decoderPool(*decoder, inputFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
