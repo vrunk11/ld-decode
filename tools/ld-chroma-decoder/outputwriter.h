@@ -54,7 +54,7 @@ public:
         qint32 paddingAmount = 8;
         PixelFormat pixelFormat = RGB48;
         bool outputY4m = false;
-        bool useResampling = true;
+        bool useResampling = false;
 		qint32 resampleWidth = 720;
     };
 

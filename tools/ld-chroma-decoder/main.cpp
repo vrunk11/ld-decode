@@ -560,11 +560,25 @@ int main(int argc, char *argv[])
 		{
 			if(metaData.getVideoParameters().system == NTSC)
 			{
-				outputConfig.resampleWidth = 648;
+				if(metaData.getVideoParameters().isWidescreen)
+				{
+					outputConfig.resampleWidth = 864;
+				}
+				else
+				{
+					outputConfig.resampleWidth = 648;
+				}
 			}
 			else
 			{
-				outputConfig.resampleWidth = 762;
+				if(metaData.getVideoParameters().isWidescreen)
+				{
+					outputConfig.resampleWidth = 1030;
+				}
+				else
+				{
+					outputConfig.resampleWidth = 773;
+				}
 			}
 		}
 		else if((sizeFormatName == "custom" || sizeFormatName == "pixel") && parser.isSet(outputResampleValueOption))
