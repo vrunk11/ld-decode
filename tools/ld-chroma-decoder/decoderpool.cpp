@@ -26,11 +26,11 @@
 
 #include "decoderpool.h"
 
-DecoderPool::DecoderPool(Decoder &_decoder, QString _inputFileName,
+DecoderPool::DecoderPool(Decoder &_decoder, QString _inputFileName, QString _chromaFileName,
                          LdDecodeMetaData &_ldDecodeMetaData,
                          OutputWriter::Configuration &_outputConfig, QString _outputFileName,
                          qint32 _startFrame, qint32 _length, qint32 _maxThreads)
-    : decoder(_decoder), inputFileName(_inputFileName),
+    : decoder(_decoder), inputFileName(_inputFileName), chromaFileName(_chromaFileName),
       outputConfig(_outputConfig), outputFileName(_outputFileName),
       startFrame(_startFrame), length(_length), maxThreads(_maxThreads),
       abort(false), ldDecodeMetaData(_ldDecodeMetaData)
@@ -62,6 +62,17 @@ bool DecoderPool::process()
         qInfo() << "Unable to open ld-decode video file";
         return false;
     }
+	
+	// Open the chroma video file if available
+	if(chromaFileName != "")
+	{
+		if (!sourceChroma.open(chromaFileName, videoParameters.fieldWidth * videoParameters.fieldHeight)) {
+			// Could not open chroma video file
+			qInfo() << "Unable to open ld-decode chroma video file";
+			return false;
+		}
+		isYC = true;
+	}
 
     // If no startFrame parameter was specified, set the start frame to 1
     if (startFrame == -1) startFrame = 1;
@@ -88,6 +99,10 @@ bool DecoderPool::process()
             // Failed to open stdout
             qCritical() << "Could not open stdout for output";
             sourceVideo.close();
+			if(isYC)
+			{
+				sourceChroma.close();
+			}
             return false;
         }
         qInfo() << "Writing output to stdout";
@@ -98,6 +113,10 @@ bool DecoderPool::process()
             // Failed to open output file
             qCritical() << "Could not open" << outputFileName << "for output";
             sourceVideo.close();
+			if(isYC)
+			{
+				sourceChroma.close();
+			}
             return false;
         }
     }
@@ -136,6 +155,10 @@ bool DecoderPool::process()
     if (abort) {
         sourceVideo.close();
         targetVideo.close();
+		if(isYC)
+		{
+			sourceChroma.close();
+		}
         return false;
     }
 
@@ -145,6 +168,10 @@ bool DecoderPool::process()
         qCritical() << "Incorrect state at end of processing";
         sourceVideo.close();
         targetVideo.close();
+		if(isYC)
+		{
+			sourceChroma.close();
+		}
         return false;
     }
 
@@ -154,6 +181,12 @@ bool DecoderPool::process()
 
     // Close the source video
     sourceVideo.close();
+	
+	// Close chroma if available
+	if(isYC)
+	{
+		sourceChroma.close();
+	}
 
     // Close the target video
     targetVideo.close();
@@ -181,11 +214,45 @@ bool DecoderPool::getInputFrames(qint32 &startFrameNumber, QVector<SourceField> 
     // Advance the frame number
     startFrameNumber = inputFrameNumber;
     inputFrameNumber += batchFrames;
-
+	
     // Load the fields
     SourceField::loadFields(sourceVideo, ldDecodeMetaData,
                             startFrameNumber, batchFrames, decoderLookBehind, decoderLookAhead,
                             fields, startIndex, endIndex);
+
+    return true;
+}
+
+bool DecoderPool::getYCFrames(qint32 &startFrameNumber, QVector<SourceField> &lumaFields, QVector<SourceField> &chromaFields, qint32 &startIndex, qint32 &endIndex)
+{
+    QMutexLocker locker(&inputMutex);
+
+    // Work out a reasonable batch size to provide work for all threads.
+    // This assumes that the synchronisation to get a new batch is less
+    // expensive than computing a single frame, so a batch size of 1 is
+    // reasonable.
+    const qint32 maxBatchSize = qMin(DEFAULT_BATCH_SIZE, qMax(1, length / maxThreads));
+
+    // Work out how many frames will be in this batch
+    qint32 batchFrames = qMin(maxBatchSize, lastFrameNumber + 1 - inputFrameNumber);
+    if (batchFrames == 0) {
+        // No more input frames
+        return false;
+    }
+
+    // Advance the frame number
+    startFrameNumber = inputFrameNumber;
+    inputFrameNumber += batchFrames;
+	
+    // Load the Y fields
+    SourceField::loadFields(sourceVideo, ldDecodeMetaData,
+                            startFrameNumber, batchFrames, decoderLookBehind, decoderLookAhead,
+                            lumaFields, startIndex, endIndex);
+	
+	// Load the C fields
+    SourceField::loadFields(sourceChroma, ldDecodeMetaData,
+                            startFrameNumber, batchFrames, decoderLookBehind, decoderLookAhead,
+                            chromaFields, startIndex, endIndex);
 
     return true;
 }

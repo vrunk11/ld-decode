@@ -45,28 +45,50 @@ void DecoderThread::run()
 {
     // Input and output data
     QVector<SourceField> inputFields;
-    QVector<ComponentFrame> componentFrames;
+    QVector<SourceField> chromaFields;
+    QVector<ComponentFrame> componentFramesVideo;
+    QVector<ComponentFrame> componentFramesChroma;
     QVector<OutputFrame> outputFrames;
 
     while (!abort) {
         // Get the next batch of fields to process
         qint32 startFrameNumber, startIndex, endIndex;
-        if (!decoderPool.getInputFrames(startFrameNumber, inputFields, startIndex, endIndex)) {
-            // No more input frames -- exit
-            break;
-        }
+		if(decoderPool.isYC)
+		{
+			if (!decoderPool.getYCFrames(startFrameNumber, inputFields, chromaFields, startIndex, endIndex)) {
+				// No more input frames -- exit
+				break;
+			}
+		}
+		else
+		{
+			if (!decoderPool.getInputFrames(startFrameNumber, inputFields, startIndex, endIndex)) {
+				// No more input frames -- exit
+				break;
+			}
+		}
 
         // Adjust the temporary arrays to the right size
         const qint32 numFrames = (endIndex - startIndex) / 2;
-        componentFrames.resize(numFrames);
+        componentFramesVideo.resize(numFrames);
+        componentFramesChroma.resize(numFrames);
         outputFrames.resize(numFrames);
 
         // Decode the fields to component frames
-        decodeFrames(inputFields, startIndex, endIndex, componentFrames);
+        decodeFrames(inputFields, startIndex, endIndex, componentFramesVideo);
+		if(decoderPool.isYC)
+		{
+			decodeFrames(chromaFields, startIndex, endIndex, componentFramesChroma);
+		}
 
         // Convert the component frames to the output format
         for (qint32 i = 0; i < numFrames; i++) {
-            outputWriter.convert(componentFrames[i], outputFrames[i]);
+			if(decoderPool.isYC)
+			{
+				componentFramesVideo[i].setU(*componentFramesChroma[i].getU());
+				componentFramesVideo[i].setV(*componentFramesChroma[i].getV());
+			}
+            outputWriter.convert(componentFramesVideo[i], outputFrames[i]);
         }
 
         // Write the frames to the output file

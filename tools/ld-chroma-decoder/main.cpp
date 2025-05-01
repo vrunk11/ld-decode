@@ -135,6 +135,12 @@ int main(int argc, char *argv[])
                                        QCoreApplication::translate("main", "Specify the input JSON file (default input.json)"),
                                        QCoreApplication::translate("main", "filename"));
     parser.addOption(inputJsonOption);
+	
+	// Option to specify a second .tbc file containing the chroma
+    QCommandLineOption chromaInputOption(QStringList() << "c" << "chroma" << "chroma-input",
+                                       QCoreApplication::translate("main", "Specify chroma input TBC file"),
+                                       QCoreApplication::translate("main", "filename"));
+    parser.addOption(chromaInputOption);
 
     // Option to select start frame (sequential) (-s)
     QCommandLineOption startFrameOption(QStringList() << "s" << "start",
@@ -306,6 +312,25 @@ int main(int argc, char *argv[])
         qCritical("You must specify the input TBC and output files");
         return -1;
     }
+	
+	//chroma source
+	QString chromaFileName = inputFileName;
+	chromaFileName.chop(4);
+	chromaFileName += "_chroma.tbc";
+    if (parser.isSet(chromaInputOption)) {
+		chromaFileName = parser.value(chromaInputOption);
+	}
+	
+	if(!QFile::exists(chromaFileName))
+	{
+		chromaFileName = "";
+		qInfo("No chroma file found source is assumed to be CVBS");
+	}
+	else
+	{
+		qInfo("Chroma file found source is assumed to be Y/C");
+	}
+
 
     // Check filename arguments are reasonable
     if (inputFileName == "-" && !parser.isSet(inputJsonOption)) {
@@ -621,7 +646,7 @@ int main(int argc, char *argv[])
 	}
     
     // Perform the processing
-    DecoderPool decoderPool(*decoder, inputFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
+    DecoderPool decoderPool(*decoder, inputFileName, chromaFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
     if (!decoderPool.process()) {
         return -1;
     }

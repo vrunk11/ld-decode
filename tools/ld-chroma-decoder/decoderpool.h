@@ -43,7 +43,7 @@
 class DecoderPool
 {
 public:
-    explicit DecoderPool(Decoder &decoder, QString inputFileName,
+    explicit DecoderPool(Decoder &decoder, QString inputFileName, QString chromaFileName,
                          LdDecodeMetaData &ldDecodeMetaData,
                          OutputWriter::Configuration &outputConfig, QString outputFileName,
                          qint32 startFrame, qint32 length, qint32 maxThreads);
@@ -74,6 +74,7 @@ public:
     // Returns true if a frame was returned, false if the end of the input has
     // been reached.
     bool getInputFrames(qint32 &startFrameNumber, QVector<SourceField> &fields, qint32 &startIndex, qint32 &endIndex);
+    bool getYCFrames(qint32 &startFrameNumber, QVector<SourceField> &lumaFields, QVector<SourceField> &chromaFields, qint32 &startIndex, qint32 &endIndex);
 
     // For worker threads: return decoded frames to write to the output file.
     //
@@ -82,6 +83,7 @@ public:
     //
     // Returns true on success, false on failure.
     bool putOutputFrames(qint32 startFrameNumber, const QVector<OutputFrame> &outputFrames);
+	bool isYC = false;
 
 private:
     bool putOutputFrame(qint32 frameNumber, const OutputFrame &outputFrame);
@@ -92,6 +94,7 @@ private:
     // Parameters
     Decoder &decoder;
     QString inputFileName;
+    QString chromaFileName;
     OutputWriter::Configuration outputConfig;
     QString outputFileName;
     qint32 startFrame;
@@ -110,6 +113,7 @@ private:
     qint32 lastFrameNumber;
     LdDecodeMetaData &ldDecodeMetaData;
     SourceVideo sourceVideo;
+    SourceVideo sourceChroma;
 
     // Output stream information (all guarded by outputMutex while threads are running)
     QMutex outputMutex;
