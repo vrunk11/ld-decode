@@ -55,7 +55,7 @@ public:
         PixelFormat pixelFormat = RGB48;
         bool outputY4m = false;
         bool useResampling = true;
-		qint32 resampleWidth = 646;
+		qint32 resampleWidth = 720;
     };
 
     // Set the output configuration, and adjust the VideoParameters to suit.
@@ -72,7 +72,7 @@ public:
     QByteArray getFrameHeader() const;
 
     // For worker threads: convert a component frame to the configured output format
-    void convert(const ComponentFrame &componentFrame, OutputFrame &outputFrame) const;
+    void convert(ComponentFrame &componentFrameIn, OutputFrame &outputFrame) const;
 
     PixelFormat getPixelFormat() const {
         return config.pixelFormat;
@@ -100,7 +100,7 @@ private:
     void clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame &outputFrame) const;
 
     // Convert one line
-    void convertLine(qint32 lineNumber, const ComponentFrame &componentFrame, OutputFrame &outputFrame) const;
+    void convertLine(qint32 lineNumber, const ComponentFrame &componentFrame, OutputFrame &outputFrame, const double resizeRatio) const;
 };
 
 #endif // OUTPUTWRITER_H

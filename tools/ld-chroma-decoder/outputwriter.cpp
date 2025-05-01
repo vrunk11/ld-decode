@@ -61,9 +61,7 @@ void OutputWriter::updateConfiguration(LdDecodeMetaData::VideoParameters &_video
     activeWidth = videoParameters.activeVideoEnd - videoParameters.activeVideoStart;
     activeHeight = videoParameters.lastActiveFrameLine - videoParameters.firstActiveFrameLine;
     outputHeight = activeHeight;
-	outputWidth = config.resampleWidth;
-	
-	qint32 outWidth = config.useResampling ? config.resampleWidth : videoParameters.activeVideoEnd - videoParameters.activeVideoStart;
+	outputWidth = config.useResampling ? config.resampleWidth : videoParameters.activeVideoEnd - videoParameters.activeVideoStart;
 
     if (config.paddingAmount > 1) {
         // Some video codecs require the width and height of a video to be divisible by
@@ -140,7 +138,7 @@ QByteArray OutputWriter::getStreamHeader() const
     str << "YUV4MPEG2";
 
     // Frame size
-    str << " W" << config.resampleWidth;
+	config.useResampling ? str << " W" << config.resampleWidth : str << " W" << activeWidth;
     str << " H" << outputHeight;
 
     // Frame rate
@@ -158,11 +156,9 @@ QByteArray OutputWriter::getStreamHeader() const
     }
 
     // Pixel aspect ratio
-    // Follows EBU R92 and SMPTE RP 187 except that values are scaled from
-    // BT.601 sampling (13.5 MHz) to 4fSC
 	if(config.useResampling)
 	{
-		const int height = (videoParameters.system == PAL ? 576 : 480);
+		const int height = (videoParameters.system == PAL ? 576 : 488);
 		if (videoParameters.isWidescreen) {
 			// widescreen DAR = 16:9
 			{
@@ -183,6 +179,8 @@ QByteArray OutputWriter::getStreamHeader() const
 	}
 	else
 	{
+		// Follows EBU R92 and SMPTE RP 187 except that values are scaled from
+		// BT.601 sampling (13.5 MHz) to 4fSC
 		if (videoParameters.system == PAL) {
 			if (videoParameters.isWidescreen) {
 				str << " A865:779"; // (16 / 9) * (576 / (702 * 4*fSC / 13.5))
@@ -225,33 +223,94 @@ QByteArray OutputWriter::getFrameHeader() const
     return QStringLiteral("FRAME\n").toUtf8();
 }
 
-void OutputWriter::convert(const ComponentFrame &componentFrame, OutputFrame &outputFrame) const
+void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &outputFrame) const
 {
-    // Work out the number of output values, and resize the vector accordingly
-    qint32 totalSize = outputWidth * outputHeight;
+	qint32 outSize = (outputWidth * outputHeight);
+	ComponentFrame componentFrameResample;
+	const double resizeRatio = static_cast<double> (outputWidth) / activeWidth;
 	
+	if(config.useResampling)
+	{
+		//init only if we resample
+		componentFrameResample.init(videoParameters,false);
+		
+		size_t flushDone = 0;
+		size_t idone = 0, odone = 0;
+		soxr_io_spec_t io_spec = soxr_io_spec(SOXR_FLOAT64_I, SOXR_FLOAT64_I);
+		soxr_quality_spec_t q_spec = soxr_quality_spec(SOXR_HQ, 0);
+		soxr_runtime_spec_t const runtime_spec = soxr_runtime_spec(1);
+		
+		//compute how much we need to resize the inactive area
+		const qint32 leftPad  = qRound(videoParameters.activeVideoStart * resizeRatio);
+		const qint32 rightPad = qRound((videoParameters.fieldWidth - videoParameters.activeVideoEnd) * resizeRatio);
+		const qint32 inactiveOutSize = leftPad + rightPad;
+		
+		//comput size of each buffer
+		const qint32 inSize = componentFrameIn.getWidth() * componentFrameIn.getHeight();
+		qint32 resampleSize = ((outputWidth + inactiveOutSize) * componentFrameIn.getHeight());
+		
+		componentFrameResample.setWidth(outputWidth + inactiveOutSize);
+		
+		componentFrameResample.getY()->resize(resampleSize);
+		componentFrameResample.getU()->resize(resampleSize);
+		componentFrameResample.getV()->resize(resampleSize);
+		
+		//resampling Y
+		soxr_error_t errY;
+		soxr_t soxrY = soxr_create(inSize, resampleSize, 1, &errY, &io_spec, &q_spec, &runtime_spec);
+		errY = soxr_process(soxrY, componentFrameIn.getY()->data(), inSize, &idone, componentFrameResample.getY()->data(), resampleSize, &odone);
+		soxr_delete(soxrY);
+		
+		//resample U and V if needed
+		if(config.pixelFormat != GRAY16)
+		{
+			soxr_error_t errU;
+			soxr_error_t errV;
+			
+			soxr_t soxrU = soxr_create(inSize, resampleSize, 1, &errU, &io_spec, &q_spec, &runtime_spec);
+			soxr_t soxrV = soxr_create(inSize, resampleSize, 1, &errV, &io_spec, &q_spec, &runtime_spec);
+			
+			errU = soxr_process(soxrU, componentFrameIn.getU()->data(), inSize, &idone, componentFrameResample.getU()->data(), resampleSize, &odone);
+			errV = soxr_process(soxrV, componentFrameIn.getV()->data(), inSize, &idone, componentFrameResample.getV()->data(), resampleSize, &odone);
+			
+			soxr_delete(soxrU);
+			soxr_delete(soxrV);
+		}
+	}
+	
+    // Work out the number of output values, and resize the vector accordingly
     switch (config.pixelFormat) {
     case RGB48:
     case YUV444P16:
-        totalSize *= 3;
+        outSize *= 3;
         break;
     case GRAY16:
         break;
     }
-    outputFrame.resize(totalSize);
+    outputFrame.resize(outSize);
 
     // Clear padding
     clearPadLines(0, topPadLines, outputFrame);
     clearPadLines(outputHeight - bottomPadLines, bottomPadLines, outputFrame);
-
-    // Convert active lines
-    for (qint32 y = 0; y < activeHeight; y++) {
-        convertLine(y, componentFrame, outputFrame);
-    }
+	
+	if(config.useResampling)
+	{
+		// Convert active lines
+		for (qint32 y = 0; y < activeHeight; y++) {
+			convertLine(y, componentFrameResample, outputFrame, resizeRatio);
+		}
+	}
+	else
+	{
+		// Convert active lines
+		for (qint32 y = 0; y < activeHeight; y++) {
+			convertLine(y, componentFrameIn, outputFrame, resizeRatio);
+		}
+	}
 }
 
 void OutputWriter::clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame &outputFrame) const
-{
+{	
     switch (config.pixelFormat) {
         case RGB48: {
             // Fill with RGB black
@@ -290,17 +349,18 @@ void OutputWriter::clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame 
     }
 }
 
-void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componentFrame, OutputFrame &outputFrame) const
+void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componentFrame, OutputFrame &outputFrame, const double resizeRatio) const
 {
     // Get pointers to the component data for the active region
     const qint32 inputLine = videoParameters.firstActiveFrameLine + lineNumber;
-    const double *inY = componentFrame.y(inputLine) + videoParameters.activeVideoStart;
+	
+    const double *inY = componentFrame.y(inputLine) + static_cast<quint32> (qRound(videoParameters.activeVideoStart * resizeRatio));
     // Not used if output is GRAY16
     const double *inU = (config.pixelFormat != GRAY16)
-                         ? componentFrame.u(inputLine) + videoParameters.activeVideoStart
+                         ? componentFrame.u(inputLine) + static_cast<quint32> (qRound(videoParameters.activeVideoStart * resizeRatio))
                          : nullptr;
     const double *inV = (config.pixelFormat != GRAY16)
-                         ? componentFrame.v(inputLine) + videoParameters.activeVideoStart
+                         ? componentFrame.v(inputLine) + static_cast<quint32> (qRound(videoParameters.activeVideoStart * resizeRatio))
                          : nullptr;
 
     const qint32 outputLine = topPadLines + lineNumber;
@@ -308,67 +368,6 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
     const double yOffset = videoParameters.black16bIre;
     double yRange = videoParameters.white16bIre - videoParameters.black16bIre;
     const double uvRange = yRange;
-	
-	const qint32 inWidth  = activeWidth;
-	
-	//qInfo() << inWidth << " / " << config.resampleWidth;
-	
-	std::vector<double> channelY, channelU, channelV;
-	
-	// Allocate output buffers
-	channelY.resize(outputWidth);
-	channelU.resize(outputWidth);
-	channelV.resize(outputWidth);
-	
-	if(config.useResampling)
-	{
-			size_t flushDone = 0;
-			size_t idone = 0, odone = 0;
-			soxr_io_spec_t io_spec = soxr_io_spec(SOXR_FLOAT64_I, SOXR_FLOAT64_I);
-			soxr_quality_spec_t q_spec = soxr_quality_spec(SOXR_HQ, 0);
-			soxr_runtime_spec_t const runtime_spec = soxr_runtime_spec(1);
-
-			// Create a soxr instance (1 channel, double→double) with default specs
-			soxr_error_t errY;
-			soxr_t soxrY = soxr_create(inWidth, outputWidth, 1, &errY, &io_spec, &q_spec, &runtime_spec);
-
-			// Resample Y plane
-			errY = soxr_process(soxrY, inY, inWidth, &idone, channelY.data(), outputWidth, &odone);
-			
-			//flush resampled data
-			soxr_process(soxrY, nullptr, 0, nullptr, channelY.data(), soxr_delay(soxrY), nullptr);
-			
-			// Clean up
-			soxr_delete(soxrY);
-			
-			if(config.pixelFormat != GRAY16)
-			{
-				soxr_error_t errU;
-				soxr_error_t errV;
-				
-				//create resampler
-				soxr_t soxrU = soxr_create(inWidth, outputWidth, 1, &errU, &io_spec, &q_spec, &runtime_spec);
-				soxr_t soxrV = soxr_create(inWidth, outputWidth, 1, &errV, &io_spec, &q_spec, &runtime_spec);
-				
-				//resample
-				errU = soxr_process(soxrU, inU, inWidth, &idone, channelU.data(), outputWidth, &odone);
-				errV = soxr_process(soxrV, inV, inWidth, &idone, channelV.data(), outputWidth, &odone);
-				
-				//flush resampled data
-				soxr_process(soxrU, nullptr, 0, nullptr, channelU.data(), soxr_delay(soxrU), nullptr);
-				soxr_process(soxrV, nullptr, 0, nullptr, channelV.data(), soxr_delay(soxrV), nullptr);
-				
-				// Clean up
-				soxr_delete(soxrU);
-				soxr_delete(soxrV);
-			}
-	}
-	else
-	{
-		channelY.assign(inY, inY + inWidth);
-		channelU.assign(inU, inU + inWidth);
-		channelV.assign(inV, inV + inWidth);
-	}
 	
     switch (config.pixelFormat) {
         case RGB48: {
@@ -380,9 +379,9 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 
             for (qint32 x = 0; x < outputWidth; x++) {
                 // Scale Y'UV to 0-65535
-                const double rY = qBound(0.0, (channelY[x] - yOffset) * yScale, 65535.0);
-                const double rU = channelU[x] * uvScale;
-                const double rV = channelV[x] * uvScale;
+                const double rY = qBound(0.0, (inY[x] - yOffset) * yScale, 65535.0);
+                const double rU = inU[x] * uvScale;
+                const double rV = inV[x] * uvScale;
 
                 // Convert Y'UV to R'G'B'
                 const qint32 pos = x * 3;
@@ -404,9 +403,9 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
             const double crScale = (C_SCALE / (ONE_MINUS_Kr * kR)) / uvRange;
 
             for (qint32 x = 0; x < outputWidth; x++) {
-                outY[x]  = static_cast<quint16>(qBound(Y_MIN, ((channelY[x] - yOffset) * yScale)  + Y_ZERO, Y_MAX));
-                outCB[x] = static_cast<quint16>(qBound(C_MIN, (channelU[x]             * cbScale) + C_ZERO, C_MAX));
-                outCR[x] = static_cast<quint16>(qBound(C_MIN, (channelV[x]             * crScale) + C_ZERO, C_MAX));
+                outY[x]  = static_cast<quint16>(qBound(Y_MIN, ((inY[x] - yOffset) * yScale)  + Y_ZERO, Y_MAX));
+                outCB[x] = static_cast<quint16>(qBound(C_MIN, (inU[x]             * cbScale) + C_ZERO, C_MAX));
+                outCR[x] = static_cast<quint16>(qBound(C_MIN, (inV[x]             * crScale) + C_ZERO, C_MAX));
             }
 
             break;
@@ -418,7 +417,7 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
             const double yScale = Y_SCALE / yRange;
 
             for (qint32 x = 0; x < outputWidth; x++) {
-                out[x] = static_cast<quint16>(qBound(Y_MIN, ((channelY[x] - yOffset) * yScale) + Y_ZERO, Y_MAX));
+                out[x] = static_cast<quint16>(qBound(Y_MIN, ((inY[x] - yOffset) * yScale) + Y_ZERO, Y_MAX));
             }
 
             break;

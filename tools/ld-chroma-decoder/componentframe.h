@@ -97,6 +97,13 @@ public:
     qint32 getHeight() const {
         return height;
     }
+	
+	void setWidth(qint32 _width) {
+        width = _width;
+    }
+    void setHeight(qint32 _height) {
+        height = _height;
+    }
 
 private:
     qint32 getLineOffset(qint32 line) const {

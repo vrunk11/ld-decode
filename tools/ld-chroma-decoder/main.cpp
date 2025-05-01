@@ -178,7 +178,7 @@ int main(int argc, char *argv[])
 	
 	// Option to select resizing format
     QCommandLineOption outputResampleOption(QStringList() << "size",
-                                       QCoreApplication::translate("main", "Select output size : (square,tvl,native,dv,custom) (default : native)"),
+                                       QCoreApplication::translate("main", "Select output size : (square,tvl,native,dv,pixel) (default : native)"),
                                        QCoreApplication::translate("main", "size-format"));
     parser.addOption(outputResampleOption);
 	
@@ -560,14 +560,14 @@ int main(int argc, char *argv[])
 		{
 			if(metaData.getVideoParameters().system == NTSC)
 			{
-				outputConfig.resampleWidth = 646;
+				outputConfig.resampleWidth = 648;
 			}
 			else
 			{
 				outputConfig.resampleWidth = 762;
 			}
 		}
-		else if(sizeFormatName == "custom" && parser.isSet(outputResampleValueOption))
+		else if((sizeFormatName == "custom" || sizeFormatName == "pixel") && parser.isSet(outputResampleValueOption))
 		{
 			if (parser.value(outputResampleValueOption).toInt() < 1) {
             // Quit with error
@@ -585,11 +585,11 @@ int main(int argc, char *argv[])
 			}
 			if(metaData.getVideoParameters().isWidescreen)
 			{
-				outputConfig.resampleWidth = parser.value(outputResampleValueOption).toInt()*1.77;
+				outputConfig.resampleWidth = qRound(parser.value(outputResampleValueOption).toInt()*1.7777);
 			}
 			else
 			{
-				outputConfig.resampleWidth = parser.value(outputResampleValueOption).toInt()*1.33;
+				outputConfig.resampleWidth = qRound(parser.value(outputResampleValueOption).toInt()*1.3333);
 			}
 		}
 		else if(sizeFormatName == "dv" && parser.isSet(outputResampleValueOption))
