@@ -26,18 +26,19 @@
 
 #include "decoderpool.h"
 
-DecoderPool::DecoderPool(Decoder &_decoder, QString _inputFileName, QString _chromaFileName,
+DecoderPool::DecoderPool(Decoder &_videoDecoder, Decoder &_chromaDecoder, QString _inputFileName, QString _chromaFileName,
                          LdDecodeMetaData &_ldDecodeMetaData,
                          OutputWriter::Configuration &_outputConfig, QString _outputFileName,
                          qint32 _startFrame, qint32 _length, qint32 _maxThreads)
-    : decoder(_decoder), inputFileName(_inputFileName), chromaFileName(_chromaFileName),
+    : videoDecoder(_videoDecoder), chromaDecoder(_chromaDecoder), inputFileName(_inputFileName), chromaFileName(_chromaFileName),
       outputConfig(_outputConfig), outputFileName(_outputFileName),
       startFrame(_startFrame), length(_length), maxThreads(_maxThreads),
       abort(false), ldDecodeMetaData(_ldDecodeMetaData)
 {
 }
 
-Decoder& DecoderPool::getDecoder() { return decoder; }
+Decoder& DecoderPool::getDecoder() { return videoDecoder; }
+MonoDecoder& DecoderPool::getDecoderAsMono() { return  static_cast<MonoDecoder&> (videoDecoder); }
 
 bool DecoderPool::process()
 {
@@ -46,24 +47,15 @@ bool DecoderPool::process()
     // Configure the OutputWriter, adjusting videoParameters
     outputWriter.updateConfiguration(videoParameters, outputConfig);
     outputWriter.printOutputInfo();
-
-    // Configure the decoder, and check that it can accept this video
-    if (!decoder.configure(videoParameters)) {
-        return false;
-    }
-
-    // Get the decoder's lookbehind/lookahead requirements
-    decoderLookBehind = decoder.getLookBehind();
-    decoderLookAhead = decoder.getLookAhead();
-
-    // Open the source video file
+	
+	// Open the source video file
     if (!sourceVideo.open(inputFileName, videoParameters.fieldWidth * videoParameters.fieldHeight)) {
         // Could not open source video file
         qInfo() << "Unable to open ld-decode video file";
         return false;
     }
 	
-	// Open the chroma video file if available
+	// Open the chroma video file if available and set isYC
 	if(chromaFileName != "")
 	{
 		if (!sourceChroma.open(chromaFileName, videoParameters.fieldWidth * videoParameters.fieldHeight)) {
@@ -72,6 +64,25 @@ bool DecoderPool::process()
 			return false;
 		}
 		isYC = true;
+	}
+
+    // Configure the decoder, and check that it can accept this video
+    if (!videoDecoder.configure(videoParameters)) {
+        return false;
+    }
+	
+	// Get the decoder's lookbehind/lookahead requirements
+    decoderLookBehind = videoDecoder.getLookBehind();
+    decoderLookAhead = videoDecoder.getLookAhead();
+	
+	if(isYC)
+	{
+		if (!chromaDecoder.configure(videoParameters)) {
+			return false;
+		}
+		// Get the decoder's lookbehind/lookahead requirements
+		decoderLookBehindChroma = chromaDecoder.getLookBehind();
+		decoderLookAheadChroma = chromaDecoder.getLookAhead();
 	}
 
     // If no startFrame parameter was specified, set the start frame to 1
@@ -141,7 +152,17 @@ bool DecoderPool::process()
     QVector<QThread *> threads;
     threads.resize(maxThreads);
     for (qint32 i = 0; i < maxThreads; i++) {
-        threads[i] = decoder.makeThread(abort, *this);
+		if(isYC)
+		{
+			//videoDecoder contain the mono
+			threads[i] = chromaDecoder.makeThread(abort, *this);
+		}
+		else
+		{
+			//videoDecoder contain the cvbs decoder
+			threads[i] = videoDecoder.makeThread(abort, *this);
+		}
+        
         threads[i]->start(QThread::LowPriority);
     }
 
@@ -246,12 +267,12 @@ bool DecoderPool::getYCFrames(qint32 &startFrameNumber, QVector<SourceField> &lu
 	
     // Load the Y fields
     SourceField::loadFields(sourceVideo, ldDecodeMetaData,
-                            startFrameNumber, batchFrames, decoderLookBehind, decoderLookAhead,
+                            startFrameNumber, batchFrames, decoderLookBehindChroma, decoderLookAheadChroma,
                             lumaFields, startIndex, endIndex);
 	
 	// Load the C fields
     SourceField::loadFields(sourceChroma, ldDecodeMetaData,
-                            startFrameNumber, batchFrames, decoderLookBehind, decoderLookAhead,
+                            startFrameNumber, batchFrames, decoderLookBehindChroma, decoderLookAheadChroma,
                             chromaFields, startIndex, endIndex);
 
     return true;

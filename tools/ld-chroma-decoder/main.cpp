@@ -421,8 +421,16 @@ int main(int argc, char *argv[])
     }
 
     if (parser.isSet(lumaNROption)) {
-        combConfig.yNRLevel = parser.value(lumaNROption).toDouble();
-        palConfig.yNRLevel = parser.value(lumaNROption).toDouble();
+		if(chromaFileName == "")
+		{
+			combConfig.yNRLevel = parser.value(lumaNROption).toDouble();
+			palConfig.yNRLevel = parser.value(lumaNROption).toDouble();
+		}
+		else
+		{
+			combConfig.yNRLevel = 0.0;
+			palConfig.yNRLevel = 0.0;
+		}
         monoConfig.yNRLevel = parser.value(lumaNROption).toDouble();
 
         if (combConfig.yNRLevel < 0.0) {
@@ -511,36 +519,39 @@ int main(int argc, char *argv[])
     }
 
     // Select the decoder
-    std::unique_ptr<Decoder> decoder;
+    std::unique_ptr<Decoder> videoDecoder;
+    std::unique_ptr<Decoder> lumaDecoder;
     if (decoderName == "pal2d") {
-        decoder = std::make_unique<PalDecoder>(palConfig);
+        videoDecoder = std::make_unique<PalDecoder>(palConfig);
     } else if (decoderName == "transform2d") {
         palConfig.chromaFilter = PalColour::transform2DFilter;
         if (!loadTransformThresholds(parser, transformThresholdsOption, palConfig)) {
             return -1;
         }
-        decoder = std::make_unique<PalDecoder>(palConfig);
+        videoDecoder = std::make_unique<PalDecoder>(palConfig);
     } else if (decoderName == "transform3d") {
         palConfig.chromaFilter = PalColour::transform3DFilter;
         if (!loadTransformThresholds(parser, transformThresholdsOption, palConfig)) {
             return -1;
         }
-        decoder = std::make_unique<PalDecoder>(palConfig);
+        videoDecoder = std::make_unique<PalDecoder>(palConfig);
     } else if (decoderName == "ntsc1d") {
         combConfig.dimensions = 1;
-        decoder = std::make_unique<NtscDecoder>(combConfig);
+        videoDecoder = std::make_unique<NtscDecoder>(combConfig);
     } else if (decoderName == "ntsc2d") {
         combConfig.dimensions = 2;
-        decoder = std::make_unique<NtscDecoder>(combConfig);
+        videoDecoder = std::make_unique<NtscDecoder>(combConfig);
     } else if (decoderName == "ntsc3d") {
         combConfig.dimensions = 3;
-        decoder = std::make_unique<NtscDecoder>(combConfig);
+        videoDecoder = std::make_unique<NtscDecoder>(combConfig);
     } else if (decoderName == "ntsc3dnoadapt") {
         combConfig.dimensions = 3;
         combConfig.adaptive = false;
-        decoder = std::make_unique<NtscDecoder>(combConfig);
+        videoDecoder = std::make_unique<NtscDecoder>(combConfig);
     } else if (decoderName == "mono") {
-        decoder = std::make_unique<MonoDecoder>(monoConfig);
+        videoDecoder = std::make_unique<MonoDecoder>(monoConfig);
+		//remove chroma file to process only the luma
+		chromaFileName = "";
     } else {
         qCritical() << "Unknown decoder" << decoderName;
         return -1;
@@ -644,12 +655,24 @@ int main(int argc, char *argv[])
 	{
 		outputConfig.useResampling = false;
 	}
-    
-    // Perform the processing
-    DecoderPool decoderPool(*decoder, inputFileName, chromaFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
-    if (!decoderPool.process()) {
-        return -1;
-    }
+	
+	lumaDecoder = std::make_unique<MonoDecoder>(monoConfig);
+	if(chromaFileName != "")
+	{
+		// Perform the processing
+		DecoderPool decoderPool(*lumaDecoder, *videoDecoder, inputFileName, chromaFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
+		if (!decoderPool.process()) {
+			return -1;
+		}
+	}
+	else
+	{
+		// Perform the processing lumaDecoder is not used
+		DecoderPool decoderPool(*videoDecoder, *lumaDecoder, inputFileName, chromaFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
+		if (!decoderPool.process()) {
+			return -1;
+		}
+	}
 
     // Quit with success
     return 0;

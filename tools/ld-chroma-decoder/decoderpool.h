@@ -39,11 +39,12 @@
 #include "decoder.h"
 #include "outputwriter.h"
 #include "sourcefield.h"
+#include "monodecoder.h"
 
 class DecoderPool
 {
 public:
-    explicit DecoderPool(Decoder &decoder, QString inputFileName, QString chromaFileName,
+    explicit DecoderPool(Decoder &videoDecoder, Decoder &chromaDecoder, QString inputFileName, QString chromaFileName,
                          LdDecodeMetaData &ldDecodeMetaData,
                          OutputWriter::Configuration &outputConfig, QString outputFileName,
                          qint32 startFrame, qint32 length, qint32 maxThreads);
@@ -58,6 +59,7 @@ public:
     }
 	
 	Decoder& getDecoder();
+	MonoDecoder& getDecoderAsMono();
 
     // For worker threads: get the next batch of data from the input file.
     //
@@ -92,7 +94,8 @@ private:
     static constexpr qint32 DEFAULT_BATCH_SIZE = 16;
 
     // Parameters
-    Decoder &decoder;
+    Decoder &videoDecoder;
+    Decoder &chromaDecoder;
     QString inputFileName;
     QString chromaFileName;
     OutputWriter::Configuration outputConfig;
@@ -108,7 +111,9 @@ private:
     // Input stream information (all guarded by inputMutex while threads are running)
     QMutex inputMutex;
     qint32 decoderLookBehind;
+    qint32 decoderLookBehindChroma;
     qint32 decoderLookAhead;
+    qint32 decoderLookAheadChroma;
     qint32 inputFrameNumber;
     qint32 lastFrameNumber;
     LdDecodeMetaData &ldDecodeMetaData;

@@ -73,12 +73,20 @@ void DecoderThread::run()
         componentFramesVideo.resize(numFrames);
         componentFramesChroma.resize(numFrames);
         outputFrames.resize(numFrames);
-
-        // Decode the fields to component frames
-        decodeFrames(inputFields, startIndex, endIndex, componentFramesVideo);
+		
+		// Decode the fields to component frames
 		if(decoderPool.isYC)
 		{
+			// decode the chroma
 			decodeFrames(chromaFields, startIndex, endIndex, componentFramesChroma);
+			// scale the luma
+			decoderPool.getDecoderAsMono().decodeFrames(inputFields, startIndex, endIndex, componentFramesVideo);
+			
+		}
+		else
+		{
+			// decode cvbs
+			decodeFrames(inputFields, startIndex, endIndex, componentFramesVideo);
 		}
 
         // Convert the component frames to the output format
