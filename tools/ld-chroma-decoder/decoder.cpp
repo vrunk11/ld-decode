@@ -89,7 +89,7 @@ void DecoderThread::run()
 			decodeFrames(inputFields, startIndex, endIndex, componentFramesVideo);
 		}
 
-        // Convert the component frames to the output format
+        // Convert the component frames to the output format and size
         for (qint32 i = 0; i < numFrames; i++) {
 			if(decoderPool.isYC)
 			{

@@ -154,7 +154,7 @@ bool DecoderPool::process()
     for (qint32 i = 0; i < maxThreads; i++) {
 		if(isYC)
 		{
-			//videoDecoder contain the mono
+			//videoDecoder contain the chroma decoder
 			threads[i] = chromaDecoder.makeThread(abort, *this);
 		}
 		else
@@ -278,7 +278,7 @@ bool DecoderPool::getYCFrames(qint32 &startFrameNumber, QVector<SourceField> &lu
     return true;
 }
 
-bool DecoderPool::putOutputFrames(qint32 startFrameNumber, const QVector<OutputFrame> &outputFrames)
+bool DecoderPool::putOutputFrames(qint32 startFrameNumber,const QVector<OutputFrame> &outputFrames)
 {
     QMutexLocker locker(&outputMutex);
 
@@ -301,36 +301,81 @@ bool DecoderPool::putOutputFrames(qint32 startFrameNumber, const QVector<OutputF
 // Returns true on success, false on failure.
 bool DecoderPool::putOutputFrame(qint32 frameNumber, const OutputFrame &outputFrame)
 {
-    // Put this frame into the map
-    pendingOutputFrames[frameNumber] = outputFrame;
+	//convert to 8bit for yuv411p cause there is no 16bit variant
+	if(outputConfig.pixelFormat == OutputWriter::PixelFormat::YUV411P)
+	{
+		QVector<quint8> outputFrame8;
+		outputFrame8.resize(outputFrame.size());
+		for (int i = 0; i < outputFrame.size(); ++i)
+		{
+			outputFrame8[i] = qRound(outputFrame[i] / 256.0) ;
+		}
+		// Put this frame into the map
+		pendingOutputFrames8[frameNumber] = outputFrame8;
+		
+		// Write out as many frames as possible
+		while (pendingOutputFrames8.contains(outputFrameNumber))
+		{
+			const QVector<quint8>& outputData8 = pendingOutputFrames8.value(outputFrameNumber);
 
-    // Write out as many frames as possible
-    while (pendingOutputFrames.contains(outputFrameNumber)) {
-        const OutputFrame& outputData = pendingOutputFrames.value(outputFrameNumber);
+			// Write the frame header (if there is one)
+			const QByteArray frameHeader = outputWriter.getFrameHeader();
+			if (frameHeader.size() != 0 && targetVideo.write(frameHeader) == -1) {
+				qCritical() << "Writing to the output video file failed";
+				return false;
+			}
+			
+			// Write the frame data
+			if (targetVideo.write(reinterpret_cast<const char *>(outputData8.data()), outputData8.size()) == -1) {
+				qCritical() << "Writing to the output video file failed";
+				return false;
+			}
 
-        // Write the frame header (if there is one)
-        const QByteArray frameHeader = outputWriter.getFrameHeader();
-        if (frameHeader.size() != 0 && targetVideo.write(frameHeader) == -1) {
-            qCritical() << "Writing to the output video file failed";
-            return false;
-        }
+			pendingOutputFrames8.remove(outputFrameNumber);
+			outputFrameNumber++;
 
-        // Write the frame data
-        if (targetVideo.write(reinterpret_cast<const char *>(outputData.data()), outputData.size() * 2) == -1) {
-            qCritical() << "Writing to the output video file failed";
-            return false;
-        }
+			const qint32 outputCount = outputFrameNumber - startFrame;
+			if ((outputCount % 32) == 0) {
+				// Show an update to the user
+				double fps = outputCount / (static_cast<double>(totalTimer.elapsed()) / 1000.0);
+				qInfo() << outputCount << "frames processed -" << fps << "FPS";
+			}
+		}
+	}
+	else
+	{
+		// Put this frame into the map
+		pendingOutputFrames[frameNumber] = outputFrame;
+		
+		// Write out as many frames as possible
+		while (pendingOutputFrames.contains(outputFrameNumber)) 
+		{
+			const OutputFrame& outputData = pendingOutputFrames.value(outputFrameNumber);
 
-        pendingOutputFrames.remove(outputFrameNumber);
-        outputFrameNumber++;
+			// Write the frame header (if there is one)
+			const QByteArray frameHeader = outputWriter.getFrameHeader();
+			if (frameHeader.size() != 0 && targetVideo.write(frameHeader) == -1) {
+				qCritical() << "Writing to the output video file failed";
+				return false;
+			}
+			
+			// Write the frame data
+			if (targetVideo.write(reinterpret_cast<const char *>(outputData.data()), outputData.size() * 2) == -1) {
+				qCritical() << "Writing to the output video file failed";
+				return false;
+			}
 
-        const qint32 outputCount = outputFrameNumber - startFrame;
-        if ((outputCount % 32) == 0) {
-            // Show an update to the user
-            double fps = outputCount / (static_cast<double>(totalTimer.elapsed()) / 1000.0);
-            qInfo() << outputCount << "frames processed -" << fps << "FPS";
-        }
-    }
+			pendingOutputFrames.remove(outputFrameNumber);
+			outputFrameNumber++;
+
+			const qint32 outputCount = outputFrameNumber - startFrame;
+			if ((outputCount % 32) == 0) {
+				// Show an update to the user
+				double fps = outputCount / (static_cast<double>(totalTimer.elapsed()) / 1000.0);
+				qInfo() << outputCount << "frames processed -" << fps << "FPS";
+			}
+		}
+	}
 
     return true;
 }

@@ -46,6 +46,8 @@ public:
     enum PixelFormat {
         RGB48 = 0,
         YUV444P16,
+        YUV422P16,
+        YUV411P,
         GRAY16
     };
 
@@ -53,7 +55,8 @@ public:
     struct Configuration {
         qint32 paddingAmount = 8;
         PixelFormat pixelFormat = RGB48;
-        bool outputY4m = false;
+        bool useOutputHeader = false;
+        QString outputHeader = "raw";
         bool useResampling = false;
 		qint32 resampleWidth = 720;
     };
@@ -100,7 +103,7 @@ private:
     void clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame &outputFrame) const;
 
     // Convert one line
-    void convertLine(qint32 lineNumber, const ComponentFrame &componentFrame, OutputFrame &outputFrame, const double resizeRatio) const;
+    void convertLine(qint32 lineNumber, const ComponentFrame &componentFrame, OutputFrame &outputFrame) const;
 };
 
 #endif // OUTPUTWRITER_H

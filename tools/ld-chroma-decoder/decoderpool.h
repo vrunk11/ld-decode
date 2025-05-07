@@ -124,6 +124,7 @@ private:
     QMutex outputMutex;
     qint32 outputFrameNumber;
     QMap<qint32, OutputFrame> pendingOutputFrames;
+    QMap<qint32, QVector<quint8>> pendingOutputFrames8;
     OutputWriter outputWriter;
     QFile targetVideo;
     QElapsedTimer totalTimer;

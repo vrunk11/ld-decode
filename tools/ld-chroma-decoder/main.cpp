@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     setBinaryMode();
     // Install the local debug message handler
     setDebug(true);
-    //qInstallMessageHandler(debugOutputHandler);
+    qInstallMessageHandler(debugOutputHandler);
 
     QCoreApplication a(argc, argv);
 
@@ -141,6 +141,11 @@ int main(int argc, char *argv[])
                                        QCoreApplication::translate("main", "Specify chroma input TBC file"),
                                        QCoreApplication::translate("main", "filename"));
     parser.addOption(chromaInputOption);
+	
+	// Option to avoid using chroma file and process cvbs only
+    QCommandLineOption cvbsOnlyOption(QStringList() << "cvbs",
+                                       QCoreApplication::translate("main", "Treat input as cvbs only"));
+    parser.addOption(cvbsOnlyOption);
 
     // Option to select start frame (sequential) (-s)
     QCommandLineOption startFrameOption(QStringList() << "s" << "start",
@@ -173,9 +178,15 @@ int main(int argc, char *argv[])
 
     // Option to select the output format (-p)
     QCommandLineOption outputFormatOption(QStringList() << "p" << "output-format",
-                                       QCoreApplication::translate("main", "Output format (rgb, yuv, y4m; default rgb); RGB48, YUV444P16, GRAY16 pixel formats are supported"),
+                                       QCoreApplication::translate("main", "Output format (rgb, yuv444, yuv422, yuv411; default rgb); RGB48, YUV444P16, YUV422P16, YUV411P, GRAY16 pixel formats are supported"),
                                        QCoreApplication::translate("main", "output-format"));
     parser.addOption(outputFormatOption);
+	
+	// Option to select header
+    QCommandLineOption headerOption(QStringList() << "header",
+                                       QCoreApplication::translate("main", "header format (raw, y4m, mkv; default raw)"),
+                                       QCoreApplication::translate("main", "header"));
+    parser.addOption(headerOption);
 
     // Option to set the black and white output flag (causes output to be black and white) (-b)
     QCommandLineOption setBwModeOption(QStringList() << "b" << "blackandwhite",
@@ -317,18 +328,26 @@ int main(int argc, char *argv[])
 	QString chromaFileName = inputFileName;
 	chromaFileName.chop(4);
 	chromaFileName += "_chroma.tbc";
-    if (parser.isSet(chromaInputOption)) {
-		chromaFileName = parser.value(chromaInputOption);
-	}
-	
-	if(!QFile::exists(chromaFileName))
+	if(!parser.isSet(cvbsOnlyOption))
 	{
-		chromaFileName = "";
-		qInfo("No chroma file found source is assumed to be CVBS");
+		if (parser.isSet(chromaInputOption)) {
+			chromaFileName = parser.value(chromaInputOption);
+		}
+		
+		if(!QFile::exists(chromaFileName))
+		{
+			chromaFileName = "";
+			qInfo("No chroma file found source is assumed to be CVBS");
+		}
+		else
+		{
+			qInfo("Chroma file found source is assumed to be Y/C");
+		}
 	}
 	else
 	{
-		qInfo("Chroma file found source is assumed to be Y/C");
+		chromaFileName = "";
+		qInfo("Source is assumed to be CVBS");
 	}
 
 
@@ -556,22 +575,65 @@ int main(int argc, char *argv[])
         qCritical() << "Unknown decoder" << decoderName;
         return -1;
     }
+	
+	//select header
+	if (parser.isSet(headerOption))
+	{
+		QString headerName = parser.value(headerOption);
+		if (headerName == "y4m") {
+			outputConfig.outputHeader = "y4m";
+			outputConfig.useOutputHeader = true;
+		}
+		else if (headerName == "mkv")
+		{
+			outputConfig.outputHeader = "mkv";
+			outputConfig.useOutputHeader = true;
+		}
+		else if (headerName == "raw")
+		{
+			outputConfig.outputHeader = "raw";
+			outputConfig.useOutputHeader = false;
+		}
+		else {
+			qCritical() << "Unknown header" << headerName;
+			return -1;
+		}
+	}
 
     // Select the output format
     QString outputFormatName;
     if (parser.isSet(outputFormatOption)) {
         outputFormatName = parser.value(outputFormatOption);
     } else {
-        outputFormatName = "rgb";
+		if (outputConfig.outputHeader == "y4m")
+		{
+			outputFormatName = "yuv444";
+		}
+		else
+		{
+			outputFormatName = "rgb";
+		}
     }
-    if (outputFormatName == "yuv" || outputFormatName == "y4m") {
+    if (outputFormatName == "yuv" || outputFormatName == "yuv444" || outputFormatName == "yuv422" || outputFormatName == "yuv411" || outputFormatName == "y4m") { // keep yuv and y4m option as legacy
         if (outputFormatName == "y4m") {
-            outputConfig.outputY4m = true;
+            outputConfig.useOutputHeader = true;
+			outputConfig.outputHeader = "y4m";
         }
         if (bwMode || decoderName == "mono") {
             outputConfig.pixelFormat = OutputWriter::PixelFormat::GRAY16;
         } else {
-            outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV444P16;
+			if (outputFormatName == "yuv422")
+			{
+				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV422P16;
+			}
+			else if (outputFormatName == "yuv411")
+			{
+				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV411P;
+			}
+			else // yuv444
+			{
+				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV444P16;
+			}
         }
     } else if (outputFormatName == "rgb") {
         outputConfig.pixelFormat = OutputWriter::PixelFormat::RGB48;
@@ -609,19 +671,49 @@ int main(int argc, char *argv[])
 			{
 				if(metaData.getVideoParameters().isWidescreen)
 				{
-					outputConfig.resampleWidth = 1030;
+					//adjust for chroma subsampling
+					if (outputFormatName == "yuv422")
+					{
+						outputConfig.resampleWidth = 1029;
+					}
+					else if (outputFormatName == "yuv411")
+					{
+						outputConfig.resampleWidth = 1028;
+					}
+					else
+					{
+						outputConfig.resampleWidth = 1030;
+					}
 				}
 				else
 				{
-					outputConfig.resampleWidth = 773;
+					//adjust for chroma subsampling
+					if (outputFormatName == "yuv422" || outputFormatName == "yuv411")
+					{
+						outputConfig.resampleWidth = 772;
+					}
+					else
+					{
+						outputConfig.resampleWidth = 773;
+					}
 				}
 			}
 		}
-		else if((sizeFormatName == "custom" || sizeFormatName == "pixel") && parser.isSet(outputResampleValueOption))
+		else if((sizeFormatName == "custom" || sizeFormatName == "pixel" || sizeFormatName == "px") && parser.isSet(outputResampleValueOption))
 		{
 			if (parser.value(outputResampleValueOption).toInt() < 1) {
             // Quit with error
             qCritical("Specified size must be greater than zero");
+            return -1;
+			}
+			if ((parser.value(outputResampleValueOption).toInt() % 4 != 0) && outputFormatName == "yuv411") {
+            // Quit with error
+            qCritical("Specified size must be a multiple of 4 when using yuv411");
+            return -1;
+			}
+			if ((parser.value(outputResampleValueOption).toInt() % 2 != 0) && outputFormatName == "yuv411") {
+            // Quit with error
+            qCritical("Specified size must be a multiple of 2 when using yuv422");
             return -1;
 			}
 			outputConfig.resampleWidth = parser.value(outputResampleValueOption).toInt();
@@ -641,8 +733,27 @@ int main(int argc, char *argv[])
 			{
 				outputConfig.resampleWidth = qRound(parser.value(outputResampleValueOption).toInt()*1.3333);
 			}
+			
+			if(outputFormatName == "yuv422" && outputConfig.resampleWidth)
+			{
+				const double denominator = ((outputConfig.resampleWidth/2.0) - qFloor(outputConfig.resampleWidth/2.0));
+				if(denominator != 0)
+				{
+					outputConfig.resampleWidth += 1;
+					qInfo() << "Size adjusted to fit chroma subsampling";
+				}
+			}
+			else if(outputFormatName == "yuv411")
+			{
+				const double denominator = ((outputConfig.resampleWidth/4.0) - qFloor(outputConfig.resampleWidth/4.0));
+				if(denominator != 0)
+				{
+					outputConfig.resampleWidth = outputConfig.resampleWidth + 4 - (denominator*4);
+					qInfo() << "Size adjusted to fit chroma subsampling";
+				}
+			}
 		}
-		else if(sizeFormatName == "dv" && parser.isSet(outputResampleValueOption))
+		else if((sizeFormatName == "dv" || sizeFormatName == "DV") && parser.isSet(outputResampleOption))
 		{
 			outputConfig.resampleWidth = 720;
 		}
@@ -653,7 +764,16 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		outputConfig.useResampling = false;
+		//enable resampling anyway for resampling the chroma
+		if(outputFormatName == "yuv422" || outputFormatName == "yuv411")
+		{
+			outputConfig.resampleWidth = metaData.getVideoParameters().activeVideoEnd - metaData.getVideoParameters().activeVideoStart;
+			outputConfig.useResampling = true;
+		}
+		else
+		{
+			outputConfig.useResampling = false;
+		}
 	}
 	
 	lumaDecoder = std::make_unique<MonoDecoder>(monoConfig);
