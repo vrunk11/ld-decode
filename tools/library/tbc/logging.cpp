@@ -41,6 +41,11 @@ static QCommandLineOption setQuietOption({"q", "quiet"},
 // Qt debug message handler
 void debugOutputHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
+	bool isMingw = false;
+#if defined(__MINGW32__) || defined(__MINGW64__)
+    // For MinGW compilers
+	isMingw = true;
+#endif
     // Use:
     // context.file - to show the filename
     // context.line - to show the line number
@@ -71,18 +76,36 @@ void debugOutputHandler(QtMsgType type, const QMessageLogContext &context, const
     } else {
         outputMessage += QString(": %1\n").arg(msg);
     }
-
+	
     // If quiet mode is set, suppress all output
     if (!quietDebug) {
         // First debug output?
         if (firstDebug && showDebug) {
             firstDebug = false;
-            QTextStream(stderr) << QString("Debug: Version - Git branch: %1 / commit: %2\n").arg(APP_BRANCH, APP_COMMIT);
+			if(isMingw)
+			{
+				fprintf(stderr, "Debug: Version - Git branch: %s / commit: %s\n", APP_BRANCH, APP_COMMIT);
+			}
+			else
+			{
+				QTextStream(stderr) << QString("Debug: Version - Git branch: %1 / commit: %2\n").arg(APP_BRANCH, APP_COMMIT);
+			}
         }
 
         // Display the output message on stderr
-        if (showDebug || (type != QtDebugMsg)) QTextStream(stderr) << outputMessage;
+        if (showDebug || (type != QtDebugMsg))
+		{
+			if(isMingw)
+			{
+				fprintf(stderr, "%s", outputMessage.toStdString().c_str());
+			}
+			else
+			{
+				QTextStream(stderr) << outputMessage;
+			}
+		}
     }
+	
 
     // Optional output to file
     if (saveDebug) {
