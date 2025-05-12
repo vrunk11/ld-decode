@@ -105,16 +105,16 @@ void OutputWriter::updateConfiguration(LdDecodeMetaData::VideoParameters &_video
 const char *OutputWriter::getPixelName() const
 {
     switch (config.pixelFormat) {
-    case RGB48:
+    case RGB:
         return "RGB";
-    case YUV444P16:
+    case YUV444:
         return "YUV444";
-	case YUV422P16:
+	case YUV422:
         return "YUV422";
-	case YUV411P:
+	case YUV411:
         return "YUV411";
-    case GRAY16:
-        return "GRAY16";
+    case GRAY:
+        return "GRAY";
     default:
         return "unknown";
     }
@@ -202,17 +202,17 @@ QByteArray OutputWriter::getY4mHeader(bool is8bit) const
 		if(is8bit)
 		{
 			switch (config.pixelFormat) {
-				case YUV444P16:
+				case YUV444:
 					str << " C444p XCOLORRANGE=LIMITED";
 					break;
-				case YUV422P16:
+				case YUV422:
 					str << " C422p XCOLORRANGE=LIMITED";
 					break;
-				case YUV411P:
+				case YUV411:
 					str << " C411p XCOLORRANGE=LIMITED";
 					break;
-				case GRAY16:
-					str << " Cmono16 XCOLORRANGE=LIMITED";
+				case GRAY:
+					str << " Cmono XCOLORRANGE=LIMITED";
 					break;
 				default:
 					qFatal("pixel format not supported in yuv4mpeg header");
@@ -222,16 +222,16 @@ QByteArray OutputWriter::getY4mHeader(bool is8bit) const
 		else
 		{
 			switch (config.pixelFormat) {
-				case YUV444P16:
+				case YUV444:
 					str << " C444p16 XCOLORRANGE=LIMITED";
 					break;
-				case YUV422P16:
+				case YUV422:
 					str << " C422p16 XCOLORRANGE=LIMITED";
 					break;
-				case YUV411P:
+				case YUV411:
 					str << " C411p XCOLORRANGE=LIMITED";
 					break;
-				case GRAY16:
+				case GRAY:
 					str << " Cmono16 XCOLORRANGE=LIMITED";
 					break;
 				default:
@@ -332,17 +332,17 @@ void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &strea
 	{
 		codec_ctx->bits_per_raw_sample = 8;
 		switch (config.pixelFormat) {
-		case YUV444P16:
+		case YUV444:
 			codec_ctx->pix_fmt = AV_PIX_FMT_YUV444P;
 			break;
-		case YUV422P16:
+		case YUV422:
 			codec_ctx->pix_fmt = AV_PIX_FMT_YUV422P;
 			break;
-		case YUV411P:
+		case YUV411:
 			codec_ctx->pix_fmt = AV_PIX_FMT_YUV411P;
 			break;
-		case GRAY16:
-			codec_ctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
+		case GRAY:
+			codec_ctx->pix_fmt = AV_PIX_FMT_GRAY8;
 			break;
 		default:
 			codec_ctx->pix_fmt = AV_PIX_FMT_BGR0;
@@ -353,13 +353,13 @@ void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &strea
 	{
 		codec_ctx->bits_per_raw_sample = 16;
 		switch (config.pixelFormat) {
-		case YUV444P16:
+		case YUV444:
 			codec_ctx->pix_fmt = AV_PIX_FMT_YUV444P16LE;
 			break;
-		case YUV422P16:
+		case YUV422:
 			codec_ctx->pix_fmt = AV_PIX_FMT_YUV422P16LE;
 			break;
-		case GRAY16:
+		case GRAY:
 			codec_ctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
 			break;
 		default:
@@ -497,14 +497,14 @@ void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &output
 		}
 		
 		//resample U and V if its different than native or not 4:4:4
-		if(config.resampleWidth != (videoParameters.activeVideoEnd - videoParameters.activeVideoStart) || config.pixelFormat == YUV422P16 || config.pixelFormat == YUV411P)
+		if(config.resampleWidth != (videoParameters.activeVideoEnd - videoParameters.activeVideoStart) || config.pixelFormat == YUV422 || config.pixelFormat == YUV411)
 		{
-			if(config.pixelFormat != GRAY16)
+			if(config.pixelFormat != GRAY)
 			{
 				soxr_error_t errU;
 				soxr_error_t errV;
 				
-				if(config.pixelFormat == YUV444P16 || config.pixelFormat == RGB48)
+				if(config.pixelFormat == YUV444 || config.pixelFormat == RGB)
 				{
 					soxr_t soxrU = soxr_create(inResampleSize, outResampleSize, 1, &errU, &io_spec, &q_spec, &runtime_spec);
 					soxr_t soxrV = soxr_create(inResampleSize, outResampleSize, 1, &errV, &io_spec, &q_spec, &runtime_spec);
@@ -515,7 +515,7 @@ void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &output
 					soxr_delete(soxrU);
 					soxr_delete(soxrV);
 				}
-				else if(config.pixelFormat == YUV422P16)
+				else if(config.pixelFormat == YUV422)
 				{
 					
 					soxr_t soxrU = soxr_create(inResampleSize, outResampleSize/2.0, 1, &errU, &io_spec, &q_spec, &runtime_spec);
@@ -550,17 +550,17 @@ void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &output
 	
     // Work out the number of output values, and resize the vector accordingly
     switch (config.pixelFormat) {
-    case RGB48:
-    case YUV444P16:
+    case RGB:
+    case YUV444:
         outSize *= 3;
         break;
-	case YUV422P16:
+	case YUV422:
         outSize *= 2;
         break;
-	case YUV411P:
+	case YUV411:
         outSize = qRound(outSize + (outSize/2.0));// y + (U/4) + (V/4) = y + (C/2) = y + (y/2)
         break;
-    case GRAY16:
+    case GRAY:
         break;
     }
     outputFrame.resize(outSize);
@@ -589,7 +589,7 @@ void OutputWriter::clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame 
 {
 	PixelFormat pixelFormat = config.pixelFormat;
     switch (pixelFormat) {
-        case RGB48: {
+        case RGB: {
             // Fill with RGB black
             quint16 *out = outputFrame.data() + (outputWidth * firstLine * 3);
 
@@ -599,7 +599,7 @@ void OutputWriter::clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame 
 
             break;
         }
-        case YUV444P16: {
+        case YUV444: {
             // Fill Y with black, no chroma
             quint16 *outY  = outputFrame.data() + (outputWidth * firstLine);
             quint16 *outCB = outY + (outputWidth * outputHeight);
@@ -613,7 +613,7 @@ void OutputWriter::clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame 
 
             break;
         }
-		case YUV422P16: {
+		case YUV422: {
 			int yPlaneSize  = outputWidth * outputHeight;
 			int cWidth      = outputWidth / 2;
 			int cPlaneSize  = cWidth * outputHeight;
@@ -638,7 +638,7 @@ void OutputWriter::clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame 
 			}
 			break;
 		}
-		case YUV411P: {
+		case YUV411: {
 			// total samples per plane
 			const int yPlaneSize  = outputWidth * outputHeight;
 			const int cLineWidth  = outputWidth / 4;    // chroma samples per line
@@ -667,7 +667,7 @@ void OutputWriter::clearPadLines(qint32 firstLine, qint32 numLines, OutputFrame 
 			}
 			break;
 		}
-        case GRAY16: {
+        case GRAY: {
             // Fill with black
             quint16 *out = outputFrame.data() + (outputWidth * firstLine);
 
@@ -689,10 +689,10 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 	
     const double *inY = componentFrame.y(inputLine) + static_cast<quint32> (qRound(videoParameters.activeVideoStart * resizeRatio));
     // Not used if output is GRAY16
-    const double *inU = (config.pixelFormat != GRAY16)
+    const double *inU = (config.pixelFormat != GRAY)
                          ? componentFrame.u(inputLine) + static_cast<quint32> (qRound(videoParameters.activeVideoStart * resizeRatio))
                          : nullptr;
-    const double *inV = (config.pixelFormat != GRAY16)
+    const double *inV = (config.pixelFormat != GRAY)
                          ? componentFrame.v(inputLine) + static_cast<quint32> (qRound(videoParameters.activeVideoStart * resizeRatio))
                          : nullptr;
 
@@ -703,7 +703,7 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
     const double uvRange = yRange;
 	
     switch (config.pixelFormat) {
-        case RGB48: {
+        case RGB: {
             // Convert Y'UV to full-range R'G'B' [Poynton eq 28.6 p337]
             quint16 *out = outputFrame.data() + (outputWidth * outputLine * 3);
 
@@ -725,7 +725,7 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 
             break;
         }
-        case YUV444P16: {
+        case YUV444: {
             // Convert Y'UV to Y'CbCr [Poynton eq 25.5 p307]
             quint16 *outY  = outputFrame.data() + (outputWidth * outputLine);
             quint16 *outCB = outY + (outputWidth * outputHeight);
@@ -743,7 +743,7 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 
             break;
         }
-		case YUV422P16: {
+		case YUV422: {
 			const double resizeRatioChroma = resizeRatio;
 			const double leftPad  = qRound(videoParameters.activeVideoStart * resizeRatio);
 			const double rightPad = qRound((videoParameters.fieldWidth - videoParameters.activeVideoEnd) * resizeRatio);
@@ -787,7 +787,7 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 			}
             break;
         }
-		case YUV411P: {
+		case YUV411: {
 			const double resizeRatioChroma = resizeRatio;
 			const double leftPad  = videoParameters.activeVideoStart * resizeRatio;
 			const double rightPad = (videoParameters.fieldWidth - videoParameters.activeVideoEnd) * resizeRatio;
@@ -845,7 +845,7 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 			}
             break;
         }
-        case GRAY16: {
+        case GRAY: {
             // Throw away UV and just convert Y' to the same scale as Y'CbCr
             quint16 *out = outputFrame.data() + (outputWidth * outputLine);
 

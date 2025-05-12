@@ -51,17 +51,17 @@ class OutputWriter {
 public:
     // Output pixel formats
     enum PixelFormat {
-        RGB48 = 0,
-        YUV444P16,
-        YUV422P16,
-        YUV411P,
-        GRAY16
+        RGB = 0,
+        YUV444,
+        YUV422,
+        YUV411,
+        GRAY
     };
 
     // Output settings
     struct Configuration {
         qint32 paddingAmount = 8;
-        PixelFormat pixelFormat = RGB48;
+        PixelFormat pixelFormat = RGB;
         bool useOutputHeader = false;
         QString outputHeader = "raw";
         bool useResampling = false;

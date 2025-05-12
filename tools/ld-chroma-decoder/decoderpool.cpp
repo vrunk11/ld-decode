@@ -482,7 +482,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 			}
 			
 			switch (outputConfig.pixelFormat) {
-				case OutputWriter::PixelFormat::RGB48:
+				case OutputWriter::PixelFormat::RGB:
 				{
 					uint16_t* srcData = (uint16_t*)outputData.data();
 					int pixelSize = 3; // RGB has 3 components
@@ -518,7 +518,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					}
 					break;
 				}
-				case OutputWriter::PixelFormat::YUV444P16:
+				case OutputWriter::PixelFormat::YUV444:
 				{
 					uint16_t* srcData = (uint16_t*)outputData.data();
 					int yPlaneOffset = 0;
@@ -580,7 +580,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					}
 					break;
 				}
-				case OutputWriter::PixelFormat::YUV422P16:
+				case OutputWriter::PixelFormat::YUV422:
 				{
 					uint16_t* srcData = (uint16_t*)outputData.data();
 					int yPlaneSize = outputWidth * outputHeight;
@@ -643,7 +643,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					}
 					break;
 				}
-				case OutputWriter::PixelFormat::YUV411P:
+				case OutputWriter::PixelFormat::YUV411:
 				{
 					uint16_t* srcData = (uint16_t*)outputData.data();
 					int yPlaneSize = outputWidth * outputHeight;
@@ -678,6 +678,30 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 						// 8bit convertion
 						for (int x = 0; x < chromaWidth; x++) {
 							dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+						}
+					}
+					break;
+				}
+				case OutputWriter::PixelFormat::GRAY:
+				{
+					uint16_t* srcData = (uint16_t*)outputData.data();
+					int yPlaneOffset = 0;
+					
+					// Copy Y plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint16_t* src = srcData + yPlaneOffset + y * outputWidth;
+						if(is8bit)
+						{
+							uint8_t* dst = (frame->data[0] + y * frame->linesize[0]);
+							// 8bit convertion
+							for (int x = 0; x < outputWidth; x++) {
+								dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+							}
+						}
+						else
+						{
+							uint16_t* dst = (uint16_t*)(frame->data[0] + y * frame->linesize[0]);
+							memcpy(dst, src, outputWidth * sizeof(uint16_t));
 						}
 					}
 					break;

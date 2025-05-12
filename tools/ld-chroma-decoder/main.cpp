@@ -178,7 +178,7 @@ int main(int argc, char *argv[])
 
     // Option to select the output format (-p)
     QCommandLineOption outputFormatOption(QStringList() << "p" << "output-format",
-                                       QCoreApplication::translate("main", "Output format (rgb24, rgb48, yuv444p, yuv444p16, yuv422p, yuv422p16, yuv411p; default rgb); RGB48, YUV444, YUV444P16, YUV422P, YUV422P16, YUV411P, GRAY16 pixel formats are supported"),
+                                       QCoreApplication::translate("main", "Output format (rgb24, rgb48, yuv444p, yuv444p16, yuv422p, yuv422p16, yuv411p, gray16, gray8; default rgb); RGB48, YUV444, YUV444P16, YUV422P, YUV422P16, YUV411P, GRAY16, GRAY8 pixel formats are supported"),
                                        QCoreApplication::translate("main", "output-format"));
     parser.addOption(outputFormatOption);
 	
@@ -620,35 +620,35 @@ int main(int argc, char *argv[])
 			outputFormatName = "rgb";
 		}
     }
-    if (outputFormatName == "yuv" || outputFormatName == "yuv444p" || outputFormatName == "yuv444p16" || outputFormatName == "yuv422p" || outputFormatName == "yuv422p16" || outputFormatName == "yuv411p" || outputFormatName == "y4m") { // keep yuv and y4m option as legacy
+    if (outputFormatName == "yuv" || outputFormatName == "yuv444p" || outputFormatName == "yuv444p16" || outputFormatName == "yuv422p" || outputFormatName == "yuv422p16" || outputFormatName == "yuv411p" || outputFormatName == "y16" || outputFormatName == "y8" || outputFormatName == "y4m") { // keep yuv and y4m option as legacy
         if (outputFormatName == "y4m") {
             outputConfig.useOutputHeader = true;
 			outputConfig.outputHeader = "y4m";
         }
-        if (bwMode || decoderName == "mono") {
-            outputConfig.pixelFormat = OutputWriter::PixelFormat::GRAY16;
+        if (bwMode || decoderName == "mono" || outputFormatName == "gray16" || outputFormatName == "gray8" || outputFormatName == "y16" || outputFormatName == "y8") {
+            outputConfig.pixelFormat = OutputWriter::PixelFormat::GRAY;
         } else {
 			if (outputFormatName == "yuv422p" || outputFormatName == "yuv422p16")
 			{
-				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV422P16;
+				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV422;
 			}
 			else if (outputFormatName == "yuv411p")
 			{
-				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV411P;
+				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV411;
 			}
 			else // yuv444
 			{
-				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV444P16;
+				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV444;
 			}
         }
     } else if (outputFormatName == "rgb" || outputFormatName == "rgb24" || outputFormatName == "rgb48") {//keep rgb as legacy
-        outputConfig.pixelFormat = OutputWriter::PixelFormat::RGB48;
+        outputConfig.pixelFormat = OutputWriter::PixelFormat::RGB;
     } else {
         qCritical() << "Unknown output format" << outputFormatName;
         return -1;
     }
 	
-	if(outputFormatName == "rgb24" || outputFormatName == "yuv444p" || outputFormatName == "yuv422p" || outputFormatName == "yuv411p")
+	if(outputFormatName == "rgb24" || outputFormatName == "yuv444p" || outputFormatName == "yuv422p" || outputFormatName == "yuv411p" || outputFormatName == "gray8" || outputFormatName == "y8")
 	{
 		is8bit = true;
 	}
