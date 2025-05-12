@@ -28,10 +28,10 @@
 
 DecoderPool::DecoderPool(Decoder &_videoDecoder, Decoder &_chromaDecoder, QString _inputFileName, QString _chromaFileName,
                          LdDecodeMetaData &_ldDecodeMetaData,
-                         OutputWriter::Configuration &_outputConfig, QString _outputFileName,
+                         OutputWriter::Configuration &_outputConfig, bool _is8bit, QString _outputFileName,
                          qint32 _startFrame, qint32 _length, qint32 _maxThreads)
     : videoDecoder(_videoDecoder), chromaDecoder(_chromaDecoder), inputFileName(_inputFileName), chromaFileName(_chromaFileName),
-      outputConfig(_outputConfig), outputFileName(_outputFileName),
+      outputConfig(_outputConfig), is8bit(_is8bit), outputFileName(_outputFileName),
       startFrame(_startFrame), length(_length), maxThreads(_maxThreads),
       abort(false), ldDecodeMetaData(_ldDecodeMetaData)
 {
@@ -42,7 +42,7 @@ MonoDecoder& DecoderPool::getDecoderAsMono() { return  static_cast<MonoDecoder&>
 
 bool DecoderPool::process()
 {
-    LdDecodeMetaData::VideoParameters videoParameters = ldDecodeMetaData.getVideoParameters();
+    videoParameters = ldDecodeMetaData.getVideoParameters();
 
     // Configure the OutputWriter, adjusting videoParameters
     outputWriter.updateConfiguration(videoParameters, outputConfig);
@@ -131,9 +131,65 @@ bool DecoderPool::process()
             return false;
         }
     }
+	
+	//libav data
+	if(outputConfig.outputHeader != "raw" || outputConfig.outputHeader != "y4m")
+	{
+		//write metadata for header
+		QStringList metadataLine;
+		if(videoParameters.system == NTSC)//MonoDecoder& DecoderPool::getDecoderAsMono() { return  static_cast<MonoDecoder&> (videoDecoder); }
+		{
+			Comb::Configuration* decoderCfg = &static_cast<NtscDecoder&>(videoDecoder).getConfig().combConfig;//nullptr;
+			if(isYC)
+			{
+				decoderCfg = &static_cast<NtscDecoder&>(chromaDecoder).getConfig().combConfig;
+			}
+			
+			metadataLine << "Decoded by ld-chroma-decoder"
+						<< "\nSource :" << (isYC ? "Y/C" : "CVBS")
+						<< "\nStandard :" << (videoParameters.system == PAL ? "PAL" : videoParameters.system == PAL_M ? "PAL_M" : "NTSC")
+						<< "\nDecoder :" << QString("NTSC %1D").arg(decoderCfg->dimensions)
+						<< "\nChroma gain :" << QString::number(decoderCfg->chromaGain)
+						<< "\nChroma phase :" << QString::number(decoderCfg->chromaPhase)
+						<< "\nPhase compensation :" << (decoderCfg->phaseCompensation ? "ON" : "OFF")
+						<< "\nLuma NR :" << QString::number(decoderCfg->yNRLevel)
+						<< "\nChroma NR :" << QString::number(decoderCfg->cNRLevel)
+						<< "\nBlack level :" << QString::number(qRound(videoParameters.black16bIre/256.0)) << "/" << QString::number(videoParameters.black16bIre)
+						<< "\nWhite level :" << QString::number(qRound(videoParameters.white16bIre/256.0)) << "/" << QString::number(videoParameters.white16bIre)
+						<< "\nActive video start :" << QString::number(videoParameters.activeVideoStart)
+						<< "\nActive video end :" << QString::number(videoParameters.activeVideoEnd)
+						<< "\nGithub : https://github.com/happycube/ld-decode\n";
+		}
+		else//PAL
+		{
+			PalColour::Configuration* decoderCfg = &static_cast<PalDecoder&>(videoDecoder).getConfig().pal;
+			if(isYC)
+			{
+				decoderCfg = &static_cast<PalDecoder&>(chromaDecoder).getConfig().pal;
+			}
+
+			metadataLine << "Decoded by ld-chroma-decoder"
+						<< "\nSource :" << (isYC ? "Y/C" : "CVBS")
+						<< "\nStandard :" << (videoParameters.system == PAL ? "PAL" : videoParameters.system == PAL_M ? "PAL_M" : "NTSC")
+						<< "\nDecoder :" << (decoderCfg->chromaFilter == PalColour::transform3DFilter ? "PAL Transform 3D" : decoderCfg->chromaFilter == PalColour::transform2DFilter ? "PAL Transform 2D" : "PAL 2D")
+						<< "\nTransform threshold :" << QString::number(decoderCfg->transformThreshold)
+						<< "\nSimple PAL :" << (decoderCfg->simplePAL ? "ON" : "OFF")
+						<< "\nChroma gain :" << QString::number(decoderCfg->chromaGain)
+						<< "\nChroma phase :" << QString::number(decoderCfg->chromaPhase)
+						<< "\nLuma NR :" << QString::number(decoderCfg->yNRLevel)
+						<< "\nBlack level :" << QString::number(qRound(videoParameters.black16bIre/256.0)) << "/" << QString::number(videoParameters.black16bIre)
+						<< "\nWhite level :" << QString::number(qRound(videoParameters.white16bIre/256.0)) << "/" << QString::number(videoParameters.white16bIre)
+						<< "\nActive video start :" << QString::number(videoParameters.activeVideoStart)
+						<< "\nActive video end :" << QString::number(videoParameters.activeVideoEnd)
+						<< "\nGithub : https://github.com/happycube/ld-decode\n";
+		}
+		QString metadataTxt = metadataLine.join(' ');
+		outputWriter.initVideoEncoding(fmt_ctx, stream, codec, codec_ctx, codec_opt, frame, is8bit, outputFileName, metadataTxt);
+		pkt = av_packet_alloc();
+	}
 
     // Write the stream header (if there is one)
-    const QByteArray streamHeader = outputWriter.getStreamHeader();
+    const QByteArray streamHeader = outputWriter.getY4mHeader(is8bit);
     if (streamHeader.size() != 0 && targetVideo.write(streamHeader) == -1) {
         qCritical() << "Writing to the output video file failed";
         return false;
@@ -176,6 +232,15 @@ bool DecoderPool::process()
     if (abort) {
         sourceVideo.close();
         targetVideo.close();
+		if(outputConfig.outputHeader != "raw" || outputConfig.outputHeader != "y4m")
+		{
+			av_write_trailer(fmt_ctx);
+			avformat_free_context(fmt_ctx);
+			av_frame_free(&frame);
+			av_packet_free(&pkt);
+			av_dict_free(&codec_opt);
+			avcodec_free_context(&codec_ctx);
+		}
 		if(isYC)
 		{
 			sourceChroma.close();
@@ -185,10 +250,19 @@ bool DecoderPool::process()
 
     // Check we've processed all the frames, now the workers have finished
     if (inputFrameNumber != (lastFrameNumber + 1) || outputFrameNumber != (lastFrameNumber + 1)
-        || !pendingOutputFrames.empty()) {
+        || !pendingOutputFrames.empty() || !pendingOutputFrames8.empty()) {
         qCritical() << "Incorrect state at end of processing";
         sourceVideo.close();
         targetVideo.close();
+		if(outputConfig.outputHeader != "raw" || outputConfig.outputHeader != "y4m")
+		{
+			av_write_trailer(fmt_ctx);
+			avformat_free_context(fmt_ctx);
+			av_frame_free(&frame);
+			av_packet_free(&pkt);
+			av_dict_free(&codec_opt);
+			avcodec_free_context(&codec_ctx);
+		}
 		if(isYC)
 		{
 			sourceChroma.close();
@@ -202,6 +276,17 @@ bool DecoderPool::process()
 
     // Close the source video
     sourceVideo.close();
+	
+	//finalise file and close
+	if(outputConfig.outputHeader == "raw" || outputConfig.outputHeader == "y4m")
+	{
+		av_write_trailer(fmt_ctx);
+		avformat_free_context(fmt_ctx);
+		av_frame_free(&frame);
+		av_packet_free(&pkt);
+		av_dict_free(&codec_opt);
+		avcodec_free_context(&codec_ctx);
+	}
 	
 	// Close chroma if available
 	if(isYC)
@@ -278,7 +363,7 @@ bool DecoderPool::getYCFrames(qint32 &startFrameNumber, QVector<SourceField> &lu
     return true;
 }
 
-bool DecoderPool::putOutputFrames(qint32 startFrameNumber,const QVector<OutputFrame> &outputFrames)
+bool DecoderPool::putOutputFrames(qint32 startFrameNumber, QVector<OutputFrame> &outputFrames)
 {
     QMutexLocker locker(&outputMutex);
 
@@ -299,83 +384,353 @@ bool DecoderPool::putOutputFrames(qint32 startFrameNumber,const QVector<OutputFr
 // whether we can now write some of them out.
 //
 // Returns true on success, false on failure.
-bool DecoderPool::putOutputFrame(qint32 frameNumber, const OutputFrame &outputFrame)
+bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 {
-	//convert to 8bit for yuv411p cause there is no 16bit variant
-	if(outputConfig.pixelFormat == OutputWriter::PixelFormat::YUV411P)
+	if(outputConfig.outputHeader == "raw" || outputConfig.outputHeader == "y4m")
 	{
-		QVector<quint8> outputFrame8;
-		outputFrame8.resize(outputFrame.size());
-		for (int i = 0; i < outputFrame.size(); ++i)
+		//convert to 8bit for yuv411p cause there is no 16bit variant
+		if(is8bit)
 		{
-			outputFrame8[i] = qRound(outputFrame[i] / 256.0) ;
-		}
-		// Put this frame into the map
-		pendingOutputFrames8[frameNumber] = outputFrame8;
-		
-		// Write out as many frames as possible
-		while (pendingOutputFrames8.contains(outputFrameNumber))
-		{
-			const QVector<quint8>& outputData8 = pendingOutputFrames8.value(outputFrameNumber);
+			QVector<quint8> outputFrame8;
+			outputFrame8.resize(outputFrame.size());
+			for (int i = 0; i < outputFrame.size(); ++i)
+			{
+				outputFrame8[i] = qRound(outputFrame[i] / 256.0) ;
+			}
+			// Put this frame into the map
+			pendingOutputFrames8[frameNumber] = outputFrame8;
+			
+			// Write out as many frames as possible
+			while (pendingOutputFrames8.contains(outputFrameNumber))
+			{
+				const QVector<quint8>& outputData8 = pendingOutputFrames8.value(outputFrameNumber);
 
-			// Write the frame header (if there is one)
-			const QByteArray frameHeader = outputWriter.getFrameHeader();
-			if (frameHeader.size() != 0 && targetVideo.write(frameHeader) == -1) {
-				qCritical() << "Writing to the output video file failed";
+				// Write the frame header (if there is one)
+				const QByteArray frameHeader = outputWriter.getFrameHeader();
+				if (frameHeader.size() != 0 && targetVideo.write(frameHeader) == -1) {
+					qCritical() << "Writing to the output video file failed";
+					return false;
+				}
+				
+				// Write the frame data
+				if (targetVideo.write(reinterpret_cast<const char *>(outputData8.data()), outputData8.size()) == -1) {
+					qCritical() << "Writing to the output video file failed";
+					return false;
+				}
+
+				pendingOutputFrames8.remove(outputFrameNumber);
+				outputFrameNumber++;
+
+				const qint32 outputCount = outputFrameNumber - startFrame;
+				if ((outputCount % 32) == 0) {
+					// Show an update to the user
+					double fps = outputCount / (static_cast<double>(totalTimer.elapsed()) / 1000.0);
+					qInfo() << outputCount << "frames processed -" << fps << "FPS";
+				}
+			}
+		}
+		else
+		{
+			// Put this frame into the map
+			pendingOutputFrames[frameNumber] = outputFrame;
+			
+			// Write out as many frames as possible
+			while (pendingOutputFrames.contains(outputFrameNumber)) 
+			{
+				const OutputFrame& outputData = pendingOutputFrames.value(outputFrameNumber);
+
+				// Write the frame header (if there is one)
+				const QByteArray frameHeader = outputWriter.getFrameHeader();
+				if (frameHeader.size() != 0 && targetVideo.write(frameHeader) == -1) {
+					qCritical() << "Writing to the output video file failed";
+					return false;
+				}
+				
+				// Write the frame data
+				if (targetVideo.write(reinterpret_cast<const char *>(outputData.data()), outputData.size() * 2) == -1) {
+					qCritical() << "Writing to the output video file failed";
+					return false;
+				}
+
+				pendingOutputFrames.remove(outputFrameNumber);
+				outputFrameNumber++;
+
+				const qint32 outputCount = outputFrameNumber - startFrame;
+				if ((outputCount % 32) == 0) {
+					// Show an update to the user
+					double fps = outputCount / (static_cast<double>(totalTimer.elapsed()) / 1000.0);
+					qInfo() << outputCount << "frames processed -" << fps << "FPS";
+				}
+			}
+		}
+	}
+	else//use libav
+	{
+		qint32 outputHeight = outputWriter.getOutputHeight();
+		qint32 outputWidth = outputWriter.getOutputWidth();
+		
+		// enqueue the completed frame
+        pendingOutputFrames[frameNumber] = outputFrame;
+
+        // drain in-order
+        while (pendingOutputFrames.contains(outputFrameNumber)) {
+            OutputFrame& outputData = pendingOutputFrames[outputFrameNumber];
+			
+			if (av_frame_make_writable(frame) < 0) {
+				qFatal("Could not make frame writable");
 				return false;
 			}
 			
-			// Write the frame data
-			if (targetVideo.write(reinterpret_cast<const char *>(outputData8.data()), outputData8.size()) == -1) {
-				qCritical() << "Writing to the output video file failed";
+			switch (outputConfig.pixelFormat) {
+				case OutputWriter::PixelFormat::RGB48:
+				{
+					uint16_t* srcData = (uint16_t*)outputData.data();
+					int pixelSize = 3; // RGB has 3 components
+					
+					for (int y = 0; y < outputHeight; y++) {
+						uint16_t* src = srcData + y * outputWidth * pixelSize;
+						if(is8bit)
+						{
+							uint8_t* dst = (frame->data[0] + y * frame->linesize[0]);
+							// 8bit convertion
+							for (int x = 0; x < outputWidth; x++) {
+								uint16_t r16 = src[3 * x + 0];
+								uint16_t g16 = src[3 * x + 1];
+								uint16_t b16 = src[3 * x + 2];
+
+								// Convert 16-bit to 8-bit by dividing by 256
+								uint8_t r8 = qBound(0, qRound(r16 / 256.0), 255);
+								uint8_t g8 = qBound(0, qRound(g16 / 256.0), 255);
+								uint8_t b8 = qBound(0, qRound(b16 / 256.0), 255);
+
+								// Assign to dst in BGR0 order
+								dst[4 * x + 0] = b8;     // Blue
+								dst[4 * x + 1] = g8;     // Green
+								dst[4 * x + 2] = r8;     // Red
+								dst[4 * x + 3] = 0x00;   // Unused alpha byte
+							}
+						}
+						else
+						{
+							uint16_t* dst = (uint16_t*)(frame->data[0] + y * frame->linesize[0]);
+							memcpy(dst, src, outputWidth * pixelSize * sizeof(uint16_t));
+						}
+					}
+					break;
+				}
+				case OutputWriter::PixelFormat::YUV444P16:
+				{
+					uint16_t* srcData = (uint16_t*)outputData.data();
+					int yPlaneOffset = 0;
+					int uPlaneOffset = outputWidth * outputHeight;
+					int vPlaneOffset = uPlaneOffset + outputWidth * outputHeight;
+					
+					// Copy Y plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint16_t* src = srcData + yPlaneOffset + y * outputWidth;
+						if(is8bit)
+						{
+							uint8_t* dst = (frame->data[0] + y * frame->linesize[0]);
+							// 8bit convertion
+							for (int x = 0; x < outputWidth; x++) {
+								dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+							}
+						}
+						else
+						{
+							uint16_t* dst = (uint16_t*)(frame->data[0] + y * frame->linesize[0]);
+							memcpy(dst, src, outputWidth * sizeof(uint16_t));
+						}
+					}
+					
+					// Copy U plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint16_t* src = srcData + uPlaneOffset + y * outputWidth;
+						if(is8bit)
+						{
+							uint8_t* dst = (frame->data[1] + y * frame->linesize[1]);
+							// 8bit convertion
+							for (int x = 0; x < outputWidth; x++) {
+								dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+							}
+						}
+						else
+						{
+							uint16_t* dst = (uint16_t*)(frame->data[1] + y * frame->linesize[1]);
+							memcpy(dst, src, outputWidth * sizeof(uint16_t));
+						}
+					}
+					
+					// Copy V plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint16_t* src = srcData + vPlaneOffset + y * outputWidth;
+						if(is8bit)
+						{
+							uint8_t* dst = (frame->data[2] + y * frame->linesize[2]);
+							// 8bit convertion
+							for (int x = 0; x < outputWidth; x++) {
+								dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+							}
+						}
+						else
+						{
+							uint16_t* dst = (uint16_t*)(frame->data[2] + y * frame->linesize[2]);
+							memcpy(dst, src, outputWidth * sizeof(uint16_t));
+						}
+					}
+					break;
+				}
+				case OutputWriter::PixelFormat::YUV422P16:
+				{
+					uint16_t* srcData = (uint16_t*)outputData.data();
+					int yPlaneSize = outputWidth * outputHeight;
+					int chromaWidth = outputWidth / 2;
+					int uPlaneOffset = yPlaneSize;
+					int vPlaneOffset = uPlaneOffset + (chromaWidth * outputHeight);
+					
+					// Copy Y plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint16_t* src = srcData + y * outputWidth;
+						if(is8bit)
+						{
+							uint8_t* dst = (frame->data[0] + y * frame->linesize[0]);
+							// 8bit convertion
+							for (int x = 0; x < outputWidth; x++) {
+								dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+							}
+						}
+						else
+						{
+							uint16_t* dst = (uint16_t*) (frame->data[0] + y * frame->linesize[0]);
+							memcpy(dst, src, outputWidth * sizeof(uint16_t));
+						}
+					}
+					
+					// Copy U plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint16_t* src = srcData + uPlaneOffset + y * chromaWidth;
+						if(is8bit)
+						{
+							uint8_t* dst = (frame->data[1] + y * frame->linesize[1]);
+							// 8bit convertion
+							for (int x = 0; x < chromaWidth; x++) {
+								dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+							}
+						}
+						else
+						{
+							uint16_t* dst = (uint16_t*) (frame->data[1] + y * frame->linesize[1]);
+							memcpy(dst, src, chromaWidth * sizeof(uint16_t));
+						}
+					}
+					
+					// Copy V plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint16_t* src = srcData + vPlaneOffset + y * chromaWidth;
+						if(is8bit)
+						{
+							uint8_t* dst = (frame->data[2] + y * frame->linesize[2]);
+							// 8bit convertion
+							for (int x = 0; x < chromaWidth; x++) {
+								dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+							}
+						}
+						else
+						{
+							uint16_t* dst = (uint16_t*) (frame->data[2] + y * frame->linesize[2]);
+							memcpy(dst, src, chromaWidth * sizeof(uint16_t));
+						}
+					}
+					break;
+				}
+				case OutputWriter::PixelFormat::YUV411P:
+				{
+					uint16_t* srcData = (uint16_t*)outputData.data();
+					int yPlaneSize = outputWidth * outputHeight;
+					int chromaWidth = outputWidth / 4;
+					int uPlaneOffset = yPlaneSize;
+					int vPlaneOffset = uPlaneOffset + (chromaWidth * outputHeight);
+					
+					// Copy Y plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint8_t* dst = frame->data[0] + y * frame->linesize[0];
+						uint16_t* src = srcData + y * outputWidth;
+						// 8bit convertion
+						for (int x = 0; x < outputWidth; x++) {
+							dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+						}
+					}
+					
+					// Copy U plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint8_t* dst = frame->data[1] + y * frame->linesize[1];
+						uint16_t* src = srcData + uPlaneOffset + y * chromaWidth;
+						// 8bit convertion
+						for (int x = 0; x < chromaWidth; x++) {
+							dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+						}
+					}
+					
+					// Copy V plane line by line
+					for (int y = 0; y < outputHeight; y++) {
+						uint8_t* dst = frame->data[2] + y * frame->linesize[2];
+						uint16_t* src = srcData + vPlaneOffset + y * chromaWidth;
+						// 8bit convertion
+						for (int x = 0; x < chromaWidth; x++) {
+							dst[x] = static_cast<uint8_t>(round(src[x] / 256.0));
+						}
+					}
+					break;
+				}
+			}
+			//memcpy(frame->data[0], outputData.data(), outputData.size() * sizeof(uint16_t));
+			//qInfo() << frame->linesize[0];
+			
+			frame->pts = outputFrameNumber;
+			
+			// Send frame to encoder
+			int ret = avcodec_send_frame(codec_ctx, frame);
+			if (ret < 0) {
+				qFatal("Error sending frame to encoder");
 				return false;
 			}
+			
+			// Receive encoded packets
+			AVPacket* pkt = av_packet_alloc();
+			while (ret >= 0) {
+				ret = avcodec_receive_packet(codec_ctx, pkt);
+				if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+					break;
+				} else if (ret < 0) {
+					qFatal("Error receiving packet from encoder");
+					av_packet_free(&pkt);
+					return false;
+				}
+				
+				// Rescale timestamps
+				av_packet_rescale_ts(pkt, codec_ctx->time_base, stream->time_base);
+				pkt->stream_index = stream->index;
+				
+				// Write packet
+				if (av_interleaved_write_frame(fmt_ctx, pkt) < 0) {
+					qFatal("Error muxing packet");
+					av_packet_free(&pkt);
+					return false;
+				}
+			}
 
-			pendingOutputFrames8.remove(outputFrameNumber);
-			outputFrameNumber++;
+            pendingOutputFrames.remove(outputFrameNumber);
+            outputFrameNumber++;
 
+            // progress logging
 			const qint32 outputCount = outputFrameNumber - startFrame;
 			if ((outputCount % 32) == 0) {
 				// Show an update to the user
 				double fps = outputCount / (static_cast<double>(totalTimer.elapsed()) / 1000.0);
 				qInfo() << outputCount << "frames processed -" << fps << "FPS";
 			}
-		}
-	}
-	else
-	{
-		// Put this frame into the map
-		pendingOutputFrames[frameNumber] = outputFrame;
-		
-		// Write out as many frames as possible
-		while (pendingOutputFrames.contains(outputFrameNumber)) 
-		{
-			const OutputFrame& outputData = pendingOutputFrames.value(outputFrameNumber);
-
-			// Write the frame header (if there is one)
-			const QByteArray frameHeader = outputWriter.getFrameHeader();
-			if (frameHeader.size() != 0 && targetVideo.write(frameHeader) == -1) {
-				qCritical() << "Writing to the output video file failed";
-				return false;
-			}
-			
-			// Write the frame data
-			if (targetVideo.write(reinterpret_cast<const char *>(outputData.data()), outputData.size() * 2) == -1) {
-				qCritical() << "Writing to the output video file failed";
-				return false;
-			}
-
-			pendingOutputFrames.remove(outputFrameNumber);
-			outputFrameNumber++;
-
-			const qint32 outputCount = outputFrameNumber - startFrame;
-			if ((outputCount % 32) == 0) {
-				// Show an update to the user
-				double fps = outputCount / (static_cast<double>(totalTimer.elapsed()) / 1000.0);
-				qInfo() << outputCount << "frames processed -" << fps << "FPS";
-			}
-		}
-	}
+        }
+    }
 
     return true;
 }

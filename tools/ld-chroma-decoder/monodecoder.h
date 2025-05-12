@@ -58,7 +58,11 @@ public:
                     qint32 startIndex,
                     qint32 endIndex,
                     QVector<ComponentFrame>& componentFrames);
-	void doYNR(ComponentFrame &componentFrame);				
+	void doYNR(ComponentFrame &componentFrame);
+	
+	MonoDecoder::MonoConfiguration& getConfig() {
+        return monoConfig;
+    }	
 
 private:
     MonoConfiguration monoConfig;

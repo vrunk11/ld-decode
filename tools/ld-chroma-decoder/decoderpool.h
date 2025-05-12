@@ -33,6 +33,12 @@
 #include <QThread>
 #include <QVector>
 
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/avutil.h>
+}
+
 #include "lddecodemetadata.h"
 #include "sourcevideo.h"
 
@@ -40,13 +46,16 @@
 #include "outputwriter.h"
 #include "sourcefield.h"
 #include "monodecoder.h"
+#include "ntscdecoder.h"
+#include "paldecoder.h"
+#include "palcolour.h"
 
 class DecoderPool
 {
 public:
     explicit DecoderPool(Decoder &videoDecoder, Decoder &chromaDecoder, QString inputFileName, QString chromaFileName,
                          LdDecodeMetaData &ldDecodeMetaData,
-                         OutputWriter::Configuration &outputConfig, QString outputFileName,
+                         OutputWriter::Configuration &outputConfig, bool is8bit, QString outputFileName,
                          qint32 startFrame, qint32 length, qint32 maxThreads);
 
     // Decode fields to frames as specified by the constructor args.
@@ -84,11 +93,11 @@ public:
     // with the first frame being startFrameNumber.
     //
     // Returns true on success, false on failure.
-    bool putOutputFrames(qint32 startFrameNumber, const QVector<OutputFrame> &outputFrames);
+    bool putOutputFrames(qint32 startFrameNumber, QVector<OutputFrame> &outputFrames);
 	bool isYC = false;
 
 private:
-    bool putOutputFrame(qint32 frameNumber, const OutputFrame &outputFrame);
+    bool putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame);
 
     // Default batch size, in frames
     static constexpr qint32 DEFAULT_BATCH_SIZE = 16;
@@ -103,7 +112,17 @@ private:
     qint32 startFrame;
     qint32 length;
     qint32 maxThreads;
-
+	bool is8bit;
+	
+	//libav
+	AVFormatContext* fmt_ctx = nullptr;
+	AVStream* stream = nullptr;
+	const AVCodec* codec = nullptr;
+	AVCodecContext* codec_ctx = nullptr;
+    AVFrame* frame = nullptr;
+	AVPacket* pkt = nullptr;
+	AVDictionary *codec_opt = nullptr;
+	
     // Atomic abort flag shared by worker threads; workers watch this, and shut
     // down as soon as possible if it becomes true
     QAtomicInt abort;
@@ -117,6 +136,7 @@ private:
     qint32 inputFrameNumber;
     qint32 lastFrameNumber;
     LdDecodeMetaData &ldDecodeMetaData;
+	LdDecodeMetaData::VideoParameters videoParameters;
     SourceVideo sourceVideo;
     SourceVideo sourceChroma;
 

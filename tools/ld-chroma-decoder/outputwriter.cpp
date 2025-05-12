@@ -106,13 +106,13 @@ const char *OutputWriter::getPixelName() const
 {
     switch (config.pixelFormat) {
     case RGB48:
-        return "RGB48";
+        return "RGB";
     case YUV444P16:
-        return "YUV444P16";
+        return "YUV444";
 	case YUV422P16:
-        return "YUV422P16";
+        return "YUV422";
 	case YUV411P:
-        return "YUV411P";
+        return "YUV411";
     case GRAY16:
         return "GRAY16";
     default:
@@ -129,7 +129,7 @@ void OutputWriter::printOutputInfo() const
             << getPixelName() << "frames";
 }
 
-QByteArray OutputWriter::getStreamHeader() const
+QByteArray OutputWriter::getY4mHeader(bool is8bit) const
 {
     // return if output dont needs a header
     if (!config.useOutputHeader || config.outputHeader == "raw") {
@@ -167,20 +167,16 @@ QByteArray OutputWriter::getStreamHeader() const
 			const int height = (videoParameters.system == PAL ? 576 : 488);
 			if (videoParameters.isWidescreen) {
 				// widescreen DAR = 16:9
-				{
-					auto num = 16 * height;
-					auto den =  9 * config.resampleWidth;
-					auto g   = std::gcd(num, den);
-					str << " A" << (num/g) << ":" << (den/g);
-				}
+				auto num = 16 * height;
+				auto den =  9 * config.resampleWidth;
+				auto g   = std::gcd(num, den);
+				str << " A" << (num/g) << ":" << (den/g);
 			} else {
 				// standard DAR = 4:3
-				{
-					auto num =  4 * height;
-					auto den =  3 * config.resampleWidth;
-					auto g   = std::gcd(num, den);
-					str << " A" << (num/g) << ":" << (den/g);
-				}
+				auto num =  4 * height;
+				auto den =  3 * config.resampleWidth;
+				auto g   = std::gcd(num, den);
+				str << " A" << (num/g) << ":" << (den/g);
 			}
 		}
 		else
@@ -203,31 +199,233 @@ QByteArray OutputWriter::getStreamHeader() const
 		}
 
 		// Pixel format
-		switch (config.pixelFormat) {
-		case YUV444P16:
-			str << " C444p16 XCOLORRANGE=LIMITED";
-			break;
-		case YUV422P16:
-			str << " C422p16 XCOLORRANGE=LIMITED";
-			break;
-		case YUV411P:
-			str << " C411p XCOLORRANGE=LIMITED";
-			break;
-		case GRAY16:
-			str << " Cmono16 XCOLORRANGE=LIMITED";
-			break;
-		default:
-			qFatal("pixel format not supported in yuv4mpeg header");
-			break;
+		if(is8bit)
+		{
+			switch (config.pixelFormat) {
+				case YUV444P16:
+					str << " C444p XCOLORRANGE=LIMITED";
+					break;
+				case YUV422P16:
+					str << " C422p XCOLORRANGE=LIMITED";
+					break;
+				case YUV411P:
+					str << " C411p XCOLORRANGE=LIMITED";
+					break;
+				case GRAY16:
+					str << " Cmono16 XCOLORRANGE=LIMITED";
+					break;
+				default:
+					qFatal("pixel format not supported in yuv4mpeg header");
+					break;
+			}
+		}
+		else
+		{
+			switch (config.pixelFormat) {
+				case YUV444P16:
+					str << " C444p16 XCOLORRANGE=LIMITED";
+					break;
+				case YUV422P16:
+					str << " C422p16 XCOLORRANGE=LIMITED";
+					break;
+				case YUV411P:
+					str << " C411p XCOLORRANGE=LIMITED";
+					break;
+				case GRAY16:
+					str << " Cmono16 XCOLORRANGE=LIMITED";
+					break;
+				default:
+					qFatal("pixel format not supported in yuv4mpeg header");
+					break;
+			}
 		}
 
 		str << "\n";
 	}
-	else//mkv
+	else
 	{
-		return QByteArray();// TODO: replace by an mkv implementation
+		return QByteArray();
 	}
     return header.toUtf8();
+}
+
+void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, bool is8bit, QString outputFileName, QString metadataTxt)
+{
+	int width = outputWidth;
+	int height = outputHeight;
+	//be sure to support only specified format
+	if(config.outputHeader == "mkv")
+	{
+		avformat_alloc_output_context2(&fmt_ctx, nullptr, "matroska", nullptr); // format_name: "nut" or "matroska"
+	}
+	else
+	{
+		avformat_alloc_output_context2(&fmt_ctx, nullptr, "nut", nullptr); // format_name: "nut" or "matroska"
+	}
+	
+	if (!fmt_ctx) {
+		qFatal("AV format context error");
+	}
+	
+	stream = avformat_new_stream(fmt_ctx, nullptr);
+	if (!stream){
+		qFatal("Could not create new stream");
+	}
+	
+	codec = avcodec_find_encoder(AV_CODEC_ID_FFV1);
+	if (!codec) {
+		qFatal("FFV1 encoder not found in libavcodec");
+	}
+	
+	codec_ctx = avcodec_alloc_context3(codec);
+	if (!codec_ctx) {
+		qFatal("Could not create a codec context");
+	}
+	
+	frame = av_frame_alloc();
+	if (!frame) {
+		qFatal("Could not create a frame");
+	}
+	
+	codec_ctx->codec_type = AVMEDIA_TYPE_VIDEO;
+	codec_ctx->width     = width;
+	codec_ctx->height    = height;
+	
+	// Field order
+	frame->interlaced_frame = 1; // 1 for interlaced, 0 for progressive
+	if (videoParameters.firstActiveFrameLine % 2 ^ topPadLines % 2) {
+		codec_ctx->field_order = AV_FIELD_BT;
+		stream->codecpar->field_order = AV_FIELD_BT;
+		frame->top_field_first = 0;  // 1 if top field is first, 0 otherwise
+	} else {
+		codec_ctx->field_order = AV_FIELD_TT;
+		codec_ctx->field_order = AV_FIELD_TT;
+		stream->codecpar->field_order = AV_FIELD_TT;
+		frame->top_field_first = 1;  // 1 if top field is first, 0 otherwise
+	}
+	
+	if (videoParameters.isWidescreen) {
+		// widescreen DAR = 16:9
+		auto num = 16 * height;
+		auto den =  9 * width;
+		auto g   = std::gcd(num, den);
+		codec_ctx->sample_aspect_ratio = (AVRational){(num/g), (den/g)};
+		stream->codecpar->sample_aspect_ratio = (AVRational){(num/g), (den/g)};
+	} else {
+		// standard DAR = 4:3
+		auto num =  4 * height;
+		auto den =  3 * width;
+		auto g   = std::gcd(num, den);
+		codec_ctx->sample_aspect_ratio = (AVRational){(num/g), (den/g)};//str << " A" << (num/g) << ":" << (den/g);
+		stream->codecpar->sample_aspect_ratio = (AVRational){(num/g), (den/g)};
+	}
+	
+	if (videoParameters.system == PAL) {
+		codec_ctx->time_base = (AVRational) {1,25};
+	}
+	else{
+		codec_ctx->time_base = (AVRational) {1001,30000};
+	}
+
+	// Pixel format
+	if(is8bit)
+	{
+		codec_ctx->bits_per_raw_sample = 8;
+		switch (config.pixelFormat) {
+		case YUV444P16:
+			codec_ctx->pix_fmt = AV_PIX_FMT_YUV444P;
+			break;
+		case YUV422P16:
+			codec_ctx->pix_fmt = AV_PIX_FMT_YUV422P;
+			break;
+		case YUV411P:
+			codec_ctx->pix_fmt = AV_PIX_FMT_YUV411P;
+			break;
+		case GRAY16:
+			codec_ctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
+			break;
+		default:
+			codec_ctx->pix_fmt = AV_PIX_FMT_BGR0;
+			break;
+		}
+	}
+	else
+	{
+		codec_ctx->bits_per_raw_sample = 16;
+		switch (config.pixelFormat) {
+		case YUV444P16:
+			codec_ctx->pix_fmt = AV_PIX_FMT_YUV444P16LE;
+			break;
+		case YUV422P16:
+			codec_ctx->pix_fmt = AV_PIX_FMT_YUV422P16LE;
+			break;
+		case GRAY16:
+			codec_ctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
+			break;
+		default:
+			codec_ctx->pix_fmt = AV_PIX_FMT_RGB48LE;
+			break;
+		}
+	}
+	
+	// global header required by Matroska/NUT
+    if (fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+	{
+		codec_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+		av_dict_set(&codec_opt, "global_header", "1", 0);
+	}			
+	
+	// encoder option
+	av_dict_set(&codec_opt, "level",    "3", 0);
+	av_dict_set(&codec_opt, "coder",    "1", 0);
+	av_dict_set(&codec_opt, "context",  "1", 0);
+	//av_dict_set(&codec_opt, "g",        "16", 0);
+	av_dict_set(&codec_opt, "slices",  "4", 0);
+	av_dict_set(&codec_opt, "slicecrc", "1", 0);
+	//av_dict_set(&codec_opt, "threads", "10", 0);
+	
+	// open the encoder (copies extradata into ctx->extradata)
+	if (avcodec_open2(codec_ctx, codec, &codec_opt) < 0) {
+		qFatal("Could not open codec");
+	}
+	
+	// copy context (incl. extradata) into stream parameters
+	if (avcodec_parameters_from_context(stream->codecpar, codec_ctx) < 0) {
+		qFatal("Failed to copy codec parameters");
+	}
+	
+	// initialise stream
+	stream->sample_aspect_ratio = codec_ctx->sample_aspect_ratio;
+	stream->codecpar->width  = width;
+	stream->codecpar->height = height;
+
+	// ensure the muxer writes your chosen codec and pix_fmt tag, too:
+	stream->codecpar->codec_id  = codec_ctx->codec_id;
+	stream->codecpar->codec_tag = 0;
+	stream->codecpar->format    = codec_ctx->pix_fmt;
+	
+	// initialise frame
+	frame->format = codec_ctx->pix_fmt;
+	frame->width = width;
+	frame->height = height;
+	
+	// Allocate frame buffers
+    if (av_frame_get_buffer(frame, 0) < 0) {
+        qFatal("Could not allocate frame buffers");
+    }
+	
+	if (avio_open(&fmt_ctx->pb, outputFileName.toStdString().c_str(), AVIO_FLAG_WRITE) < 0) {
+		qFatal("error opening output file");
+	}
+	
+	//metadata
+	av_dict_set(&fmt_ctx->metadata, "comment", metadataTxt.toStdString().c_str(), 0);
+	
+	if (avformat_write_header(fmt_ctx, nullptr) < 0)
+	{
+		qFatal("Error writing header");
+	}
+	return;
 }
 
 QByteArray OutputWriter::getFrameHeader() const
@@ -254,7 +452,7 @@ void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &output
 		size_t flushDone = 0;
 		size_t idone = 0, odone = 0;
 		soxr_io_spec_t io_spec = soxr_io_spec(SOXR_FLOAT64_I, SOXR_FLOAT64_I);
-		soxr_quality_spec_t q_spec = soxr_quality_spec(SOXR_HQ, 0);
+		soxr_quality_spec_t q_spec = soxr_quality_spec(SOXR_HQ, SOXR_ROLLOFF_SMALL);
 		soxr_runtime_spec_t const runtime_spec = soxr_runtime_spec(1);
 		
 		const double resizeRatio = static_cast<double> (outputWidth) / activeWidth;
@@ -267,7 +465,7 @@ void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &output
 		//pad the fullframe to a multiple off output width to avoid fractional size (we multiply by input field width to be sure it works for all size)
 		const double inResampleSize = (componentFrameIn.getWidth()*componentFrameIn.getWidth());
 		const double outResampleSize = ((outputWidth + inactiveOutSize)*componentFrameIn.getWidth());
-		
+
 		//get real input size without padding
 		const double inSize = componentFrameIn.getWidth() * componentFrameIn.getHeight();
 		const double outSize = (outputWidth + inactiveOutSize) * componentFrameIn.getHeight();
@@ -306,7 +504,7 @@ void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &output
 				soxr_error_t errU;
 				soxr_error_t errV;
 				
-				if(config.pixelFormat == YUV444P16)
+				if(config.pixelFormat == YUV444P16 || config.pixelFormat == RGB48)
 				{
 					soxr_t soxrU = soxr_create(inResampleSize, outResampleSize, 1, &errU, &io_spec, &q_spec, &runtime_spec);
 					soxr_t soxrV = soxr_create(inResampleSize, outResampleSize, 1, &errV, &io_spec, &q_spec, &runtime_spec);
@@ -565,7 +763,10 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 				const double *inputV = componentFrame.v(inputLine - qRound((videoParameters.firstActiveFrameLine/2.0))) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/2.0);
 				
 				// Convert Y'UV to Y'CbCr [Poynton eq 25.5 p307]
-				quint16 *outCB = outY + (outputWidth * (outputHeight-1));
+				quint16 *outCB = outY + (outputWidth * (outputHeight));
+				if (videoParameters.system != PAL) {
+					outCB = outY + (outputWidth * (outputHeight-1));
+				}
 				quint16 *outCR = outCB + qFloor(outputWidth * (outputHeight/2.0));
 
 				const double cbScale = (C_SCALE / (ONE_MINUS_Kb * kB)) / uvRange;
@@ -574,13 +775,13 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 				for (qint32 x = 0; x < outputWidth; x++) {
 					if(x < outputWidth/2.0 )
 					{
-						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+2] * cbScale) + C_ZERO, C_MAX));
-						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+2] * crScale) + C_ZERO, C_MAX));
+						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x] * cbScale) + C_ZERO, C_MAX));
+						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x] * crScale) + C_ZERO, C_MAX));
 					}
 					else
 					{
-						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+2+qRound(inactiveOutSizeChroma)] * cbScale) + C_ZERO, C_MAX));
-						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+2+qRound(inactiveOutSizeChroma)] * crScale) + C_ZERO, C_MAX));
+						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+qRound(inactiveOutSizeChroma)] * cbScale) + C_ZERO, C_MAX));
+						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+qRound(inactiveOutSizeChroma)] * crScale) + C_ZERO, C_MAX));
 					}
 				}
 			}
@@ -606,7 +807,10 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 				const double *inputV = componentFrame.v((inputLine) - qRound((videoParameters.firstActiveFrameLine/2.0) + (videoParameters.firstActiveFrameLine/4.0))) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/4.0);
 				
 				// Convert Y'UV to Y'CbCr [Poynton eq 25.5 p307]
-				quint16 *outCB = outY + (outputWidth * (outputHeight-2));
+				quint16 *outCB = outY + (outputWidth * (outputHeight));
+				if (videoParameters.system != PAL) {
+					outCB = outY + (outputWidth * (outputHeight-2));
+				}
 				quint16 *outCR = outCB + qRound(outputWidth * (outputHeight/4.0));
 
 				
@@ -617,23 +821,23 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 				for (qint32 x = 0; x < outputWidth; x++) {
 					if(x < chromaWidth)
 					{
-						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+1] * cbScale) + C_ZERO, C_MAX));
-						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+1] * crScale) + C_ZERO, C_MAX));
+						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x] * cbScale) + C_ZERO, C_MAX));
+						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x] * crScale) + C_ZERO, C_MAX));
 					}
 					else if(x < chromaWidth*2)
 					{
-						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+1+qRound(inactiveOutSizeChroma)] * cbScale) + C_ZERO, C_MAX));
-						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+1+qRound(inactiveOutSizeChroma)] * crScale) + C_ZERO, C_MAX));
+						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+qRound(inactiveOutSizeChroma)] * cbScale) + C_ZERO, C_MAX));
+						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+qRound(inactiveOutSizeChroma)] * crScale) + C_ZERO, C_MAX));
 					}
 					else if(x < chromaWidth*3)
 					{//i dont know why we need -1 but it fix alignment
-						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+1+qFloor(inactiveOutSizeChroma*2)] * cbScale) + C_ZERO, C_MAX));
-						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+1+qFloor(inactiveOutSizeChroma*2)] * crScale) + C_ZERO, C_MAX));
+						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+qFloor(inactiveOutSizeChroma*2)] * cbScale) + C_ZERO, C_MAX));
+						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+qFloor(inactiveOutSizeChroma*2)] * crScale) + C_ZERO, C_MAX));
 					}
 					else
 					{
-						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+1+qRound(inactiveOutSizeChroma*3)] * cbScale) + C_ZERO, C_MAX));
-						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+1+qRound(inactiveOutSizeChroma*3)] * crScale) + C_ZERO, C_MAX));
+						outCB[x] = static_cast<quint16>(qBound(C_MIN, (inputU[x+qRound(inactiveOutSizeChroma*3)] * cbScale) + C_ZERO, C_MAX));
+						outCR[x] = static_cast<quint16>(qBound(C_MIN, (inputV[x+qRound(inactiveOutSizeChroma*3)] * crScale) + C_ZERO, C_MAX));
 					}
 
 				}

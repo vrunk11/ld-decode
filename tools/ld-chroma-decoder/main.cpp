@@ -178,13 +178,13 @@ int main(int argc, char *argv[])
 
     // Option to select the output format (-p)
     QCommandLineOption outputFormatOption(QStringList() << "p" << "output-format",
-                                       QCoreApplication::translate("main", "Output format (rgb, yuv444, yuv422, yuv411; default rgb); RGB48, YUV444P16, YUV422P16, YUV411P, GRAY16 pixel formats are supported"),
+                                       QCoreApplication::translate("main", "Output format (rgb24, rgb48, yuv444p, yuv444p16, yuv422p, yuv422p16, yuv411p; default rgb); RGB48, YUV444, YUV444P16, YUV422P, YUV422P16, YUV411P, GRAY16 pixel formats are supported"),
                                        QCoreApplication::translate("main", "output-format"));
     parser.addOption(outputFormatOption);
 	
 	// Option to select header
     QCommandLineOption headerOption(QStringList() << "header",
-                                       QCoreApplication::translate("main", "header format (raw, y4m, mkv; default raw)"),
+                                       QCoreApplication::translate("main", "header format (raw, y4m, mkv, nut; default raw)"),
                                        QCoreApplication::translate("main", "header"));
     parser.addOption(headerOption);
 
@@ -589,6 +589,11 @@ int main(int argc, char *argv[])
 			outputConfig.outputHeader = "mkv";
 			outputConfig.useOutputHeader = true;
 		}
+		else if (headerName == "nut")
+		{
+			outputConfig.outputHeader = "nut";
+			outputConfig.useOutputHeader = true;
+		}
 		else if (headerName == "raw")
 		{
 			outputConfig.outputHeader = "raw";
@@ -602,19 +607,20 @@ int main(int argc, char *argv[])
 
     // Select the output format
     QString outputFormatName;
+	bool is8bit = false;
     if (parser.isSet(outputFormatOption)) {
         outputFormatName = parser.value(outputFormatOption);
     } else {
 		if (outputConfig.outputHeader == "y4m")
 		{
-			outputFormatName = "yuv444";
+			outputFormatName = "yuv444p";
 		}
 		else
 		{
 			outputFormatName = "rgb";
 		}
     }
-    if (outputFormatName == "yuv" || outputFormatName == "yuv444" || outputFormatName == "yuv422" || outputFormatName == "yuv411" || outputFormatName == "y4m") { // keep yuv and y4m option as legacy
+    if (outputFormatName == "yuv" || outputFormatName == "yuv444p" || outputFormatName == "yuv444p16" || outputFormatName == "yuv422p" || outputFormatName == "yuv422p16" || outputFormatName == "yuv411p" || outputFormatName == "y4m") { // keep yuv and y4m option as legacy
         if (outputFormatName == "y4m") {
             outputConfig.useOutputHeader = true;
 			outputConfig.outputHeader = "y4m";
@@ -622,11 +628,11 @@ int main(int argc, char *argv[])
         if (bwMode || decoderName == "mono") {
             outputConfig.pixelFormat = OutputWriter::PixelFormat::GRAY16;
         } else {
-			if (outputFormatName == "yuv422")
+			if (outputFormatName == "yuv422p" || outputFormatName == "yuv422p16")
 			{
 				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV422P16;
 			}
-			else if (outputFormatName == "yuv411")
+			else if (outputFormatName == "yuv411p")
 			{
 				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV411P;
 			}
@@ -635,12 +641,17 @@ int main(int argc, char *argv[])
 				outputConfig.pixelFormat = OutputWriter::PixelFormat::YUV444P16;
 			}
         }
-    } else if (outputFormatName == "rgb") {
+    } else if (outputFormatName == "rgb" || outputFormatName == "rgb24" || outputFormatName == "rgb48") {//keep rgb as legacy
         outputConfig.pixelFormat = OutputWriter::PixelFormat::RGB48;
     } else {
         qCritical() << "Unknown output format" << outputFormatName;
         return -1;
     }
+	
+	if(outputFormatName == "rgb24" || outputFormatName == "yuv444p" || outputFormatName == "yuv422p" || outputFormatName == "yuv411p")
+	{
+		is8bit = true;
+	}
 
     if (parser.isSet(outputPaddingOption)) {
         outputConfig.paddingAmount = parser.value(outputPaddingOption).toInt();
@@ -780,15 +791,15 @@ int main(int argc, char *argv[])
 	if(chromaFileName != "")
 	{
 		// Perform the processing
-		DecoderPool decoderPool(*lumaDecoder, *videoDecoder, inputFileName, chromaFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
+		DecoderPool decoderPool(*lumaDecoder, *videoDecoder, inputFileName, chromaFileName, metaData, outputConfig, is8bit, outputFileName, startFrame, length, maxThreads);
 		if (!decoderPool.process()) {
 			return -1;
 		}
 	}
 	else
 	{
-		// Perform the processing lumaDecoder is not used
-		DecoderPool decoderPool(*videoDecoder, *lumaDecoder, inputFileName, chromaFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
+		// Perform the processing ,luma decoder is not used
+		DecoderPool decoderPool(*videoDecoder, *lumaDecoder, inputFileName, chromaFileName, metaData, outputConfig, is8bit, outputFileName, startFrame, length, maxThreads);
 		if (!decoderPool.process()) {
 			return -1;
 		}

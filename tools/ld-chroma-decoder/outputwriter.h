@@ -29,6 +29,13 @@
 #include <QtGlobal>
 #include <QByteArray>
 #include <QVector>
+
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/avutil.h>
+}
+
 #include <soxr.h>
 
 #include "lddecodemetadata.h"
@@ -69,7 +76,8 @@ public:
     void printOutputInfo() const;
 
     // Get the header data to be written at the start of the stream
-    QByteArray getStreamHeader() const;
+    QByteArray getY4mHeader(bool is8bit) const;
+    void initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, bool is8bit, QString outputFileName, QString metadataTxt);
 
     // Get the header data to be written before each frame
     QByteArray getFrameHeader() const;
@@ -79,6 +87,14 @@ public:
 
     PixelFormat getPixelFormat() const {
         return config.pixelFormat;
+    }
+	
+	qint32 getOutputHeight() const {
+        return outputHeight;
+    }
+	
+	qint32 getOutputWidth() const {
+        return outputWidth;
     }
 
 private:

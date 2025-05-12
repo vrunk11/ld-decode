@@ -54,6 +54,10 @@ public:
     struct Configuration : public Decoder::Configuration {
         PalColour::Configuration pal;
     };
+	
+	PalDecoder::Configuration& getConfig() {
+        return config;
+    }
 
 private:
     Configuration config;

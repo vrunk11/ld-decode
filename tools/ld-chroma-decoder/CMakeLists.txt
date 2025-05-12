@@ -20,9 +20,9 @@ add_library(lddecode-chroma STATIC
 
 target_include_directories(lddecode-chroma PUBLIC .)
 
-target_link_libraries(lddecode-chroma PRIVATE Qt::Core ${FFTW_LIBRARY} lddecode-library Soxr::soxr)
+target_link_libraries(lddecode-chroma PUBLIC Qt::Core ${FFTW_LIBRARY} lddecode-library Soxr::soxr LIBAV::avformat LIBAV::avcodec LIBAV::avutil)
 
-target_include_directories(lddecode-chroma PRIVATE ${FFTW_INCLUDE_DIR})
+target_include_directories(lddecode-chroma PUBLIC ${FFTW_INCLUDE_DIR} ${LIBAV_INCLUDE_DIR})
 
 # ld-chroma-decoder
 
@@ -37,8 +37,8 @@ add_executable(ld-chroma-decoder
 
 set_target_properties(lddecode-chroma PROPERTIES AUTOMOC ON)
 
-target_include_directories(ld-chroma-decoder PRIVATE ${FFTW_INCLUDE_DIR})
+target_include_directories(ld-chroma-decoder PUBLIC ${FFTW_INCLUDE_DIR} ${LIBAV_INCLUDE_DIR})
 
-target_link_libraries(ld-chroma-decoder PRIVATE Qt::Core lddecode-library lddecode-chroma Soxr::soxr)
+target_link_libraries(ld-chroma-decoder PRIVATE Qt::Core lddecode-library lddecode-chroma)
 
 install(TARGETS ld-chroma-decoder)

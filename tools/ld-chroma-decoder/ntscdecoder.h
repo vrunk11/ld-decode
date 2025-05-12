@@ -55,6 +55,10 @@ public:
     struct Configuration : public Decoder::Configuration {
         Comb::Configuration combConfig;
     };
+	
+	NtscDecoder::Configuration& getConfig() {
+        return config;
+    }
 
 private:
     Configuration config;

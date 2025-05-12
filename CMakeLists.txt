@@ -107,6 +107,13 @@ endif()
 # Find and link libsoxr for high quality resampling
 find_package(Soxr REQUIRED)
 
+find_package(LIBAV REQUIRED)
+
+message(STATUS "LIBAV_INCLUDE_DIR = ${LIBAV_INCLUDE_DIR}")
+message(STATUS "LIBAVCODEC_LIBRARY = ${LIBAVCODEC_LIBRARY}")
+message(STATUS "LIBAVFORMAT_LIBRARY = ${LIBAVFORMAT_LIBRARY}")
+message(STATUS "LIBAVUTIL_LIBRARY = ${LIBAVUTIL_LIBRARY}")
+
 # Get the Git branch and revision
 
 execute_process(
@@ -157,16 +164,10 @@ endif()
 # ld-ldf-reader
 
 if(BUILD_LDF_READER)
-    pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET
-        libavcodec
-        libavformat
-        libavutil
-    )
-
     add_executable(ld-ldf-reader
       ld-ldf-reader.c)
 
-    target_link_libraries(ld-ldf-reader PkgConfig::LIBAV)
+    target_link_libraries(ld-ldf-reader LIBAV::avformat LIBAV::avcodec LIBAV::avutil)
 
     install(TARGETS ld-ldf-reader)
 endif()
