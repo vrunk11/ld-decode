@@ -187,6 +187,11 @@ int main(int argc, char *argv[])
                                        QCoreApplication::translate("main", "header format (raw, y4m, mkv, nut; default raw)"),
                                        QCoreApplication::translate("main", "header"));
     parser.addOption(headerOption);
+	
+	// Option to set the black and white output flag (causes output to be black and white) (-b)
+    QCommandLineOption setFFV1Option(QStringList() << "ffv1" << "FFV1",
+                                       QCoreApplication::translate("main", "Encode video to FFV1 for NUT header (option always on for MKV)"));
+    parser.addOption(setFFV1Option);
 
     // Option to set the black and white output flag (causes output to be black and white) (-b)
     QCommandLineOption setBwModeOption(QStringList() << "b" << "blackandwhite",
@@ -588,11 +593,13 @@ int main(int argc, char *argv[])
 		{
 			outputConfig.outputHeader = "mkv";
 			outputConfig.useOutputHeader = true;
+			outputConfig.useFFV1 = true;
 		}
 		else if (headerName == "nut")
 		{
 			outputConfig.outputHeader = "nut";
 			outputConfig.useOutputHeader = true;
+			outputConfig.useFFV1 = parser.isSet(setFFV1Option);
 		}
 		else if (headerName == "raw")
 		{
@@ -607,7 +614,6 @@ int main(int argc, char *argv[])
 
     // Select the output format
     QString outputFormatName;
-	bool is8bit = false;
     if (parser.isSet(outputFormatOption)) {
         outputFormatName = parser.value(outputFormatOption);
     } else {
@@ -650,7 +656,7 @@ int main(int argc, char *argv[])
 	
 	if(outputFormatName == "rgb24" || outputFormatName == "yuv444p" || outputFormatName == "yuv422p" || outputFormatName == "yuv411p" || outputFormatName == "gray8" || outputFormatName == "y8")
 	{
-		is8bit = true;
+		outputConfig.is8bit = true;
 	}
 
     if (parser.isSet(outputPaddingOption)) {
@@ -791,7 +797,7 @@ int main(int argc, char *argv[])
 	if(chromaFileName != "")
 	{
 		// Perform the processing
-		DecoderPool decoderPool(*lumaDecoder, *videoDecoder, inputFileName, chromaFileName, metaData, outputConfig, is8bit, outputFileName, startFrame, length, maxThreads);
+		DecoderPool decoderPool(*lumaDecoder, *videoDecoder, inputFileName, chromaFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
 		if (!decoderPool.process()) {
 			return -1;
 		}
@@ -799,7 +805,7 @@ int main(int argc, char *argv[])
 	else
 	{
 		// Perform the processing ,luma decoder is not used
-		DecoderPool decoderPool(*videoDecoder, *lumaDecoder, inputFileName, chromaFileName, metaData, outputConfig, is8bit, outputFileName, startFrame, length, maxThreads);
+		DecoderPool decoderPool(*videoDecoder, *lumaDecoder, inputFileName, chromaFileName, metaData, outputConfig, outputFileName, startFrame, length, maxThreads);
 		if (!decoderPool.process()) {
 			return -1;
 		}

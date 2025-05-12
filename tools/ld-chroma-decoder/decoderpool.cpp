@@ -28,10 +28,10 @@
 
 DecoderPool::DecoderPool(Decoder &_videoDecoder, Decoder &_chromaDecoder, QString _inputFileName, QString _chromaFileName,
                          LdDecodeMetaData &_ldDecodeMetaData,
-                         OutputWriter::Configuration &_outputConfig, bool _is8bit, QString _outputFileName,
+                         OutputWriter::Configuration &_outputConfig, QString _outputFileName,
                          qint32 _startFrame, qint32 _length, qint32 _maxThreads)
     : videoDecoder(_videoDecoder), chromaDecoder(_chromaDecoder), inputFileName(_inputFileName), chromaFileName(_chromaFileName),
-      outputConfig(_outputConfig), is8bit(_is8bit), outputFileName(_outputFileName),
+      outputConfig(_outputConfig), outputFileName(_outputFileName),
       startFrame(_startFrame), length(_length), maxThreads(_maxThreads),
       abort(false), ldDecodeMetaData(_ldDecodeMetaData)
 {
@@ -184,12 +184,12 @@ bool DecoderPool::process()
 						<< "\nGithub : https://github.com/happycube/ld-decode\n";
 		}
 		QString metadataTxt = metadataLine.join(' ');
-		outputWriter.initVideoEncoding(fmt_ctx, stream, codec, codec_ctx, codec_opt, frame, is8bit, outputFileName, metadataTxt);
+		outputWriter.initVideoEncoding(fmt_ctx, stream, codec, codec_ctx, codec_opt, frame, outputFileName, metadataTxt);
 		pkt = av_packet_alloc();
 	}
 
     // Write the stream header (if there is one)
-    const QByteArray streamHeader = outputWriter.getY4mHeader(is8bit);
+    const QByteArray streamHeader = outputWriter.getY4mHeader();
     if (streamHeader.size() != 0 && targetVideo.write(streamHeader) == -1) {
         qCritical() << "Writing to the output video file failed";
         return false;
@@ -389,7 +389,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 	if(outputConfig.outputHeader == "raw" || outputConfig.outputHeader == "y4m")
 	{
 		//convert to 8bit for yuv411p cause there is no 16bit variant
-		if(is8bit)
+		if(outputConfig.is8bit)
 		{
 			QVector<quint8> outputFrame8;
 			outputFrame8.resize(outputFrame.size());
@@ -489,7 +489,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					
 					for (int y = 0; y < outputHeight; y++) {
 						uint16_t* src = srcData + y * outputWidth * pixelSize;
-						if(is8bit)
+						if(outputConfig.is8bit)
 						{
 							uint8_t* dst = (frame->data[0] + y * frame->linesize[0]);
 							// 8bit convertion
@@ -528,7 +528,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					// Copy Y plane line by line
 					for (int y = 0; y < outputHeight; y++) {
 						uint16_t* src = srcData + yPlaneOffset + y * outputWidth;
-						if(is8bit)
+						if(outputConfig.is8bit)
 						{
 							uint8_t* dst = (frame->data[0] + y * frame->linesize[0]);
 							// 8bit convertion
@@ -546,7 +546,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					// Copy U plane line by line
 					for (int y = 0; y < outputHeight; y++) {
 						uint16_t* src = srcData + uPlaneOffset + y * outputWidth;
-						if(is8bit)
+						if(outputConfig.is8bit)
 						{
 							uint8_t* dst = (frame->data[1] + y * frame->linesize[1]);
 							// 8bit convertion
@@ -564,7 +564,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					// Copy V plane line by line
 					for (int y = 0; y < outputHeight; y++) {
 						uint16_t* src = srcData + vPlaneOffset + y * outputWidth;
-						if(is8bit)
+						if(outputConfig.is8bit)
 						{
 							uint8_t* dst = (frame->data[2] + y * frame->linesize[2]);
 							// 8bit convertion
@@ -591,7 +591,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					// Copy Y plane line by line
 					for (int y = 0; y < outputHeight; y++) {
 						uint16_t* src = srcData + y * outputWidth;
-						if(is8bit)
+						if(outputConfig.is8bit)
 						{
 							uint8_t* dst = (frame->data[0] + y * frame->linesize[0]);
 							// 8bit convertion
@@ -609,7 +609,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					// Copy U plane line by line
 					for (int y = 0; y < outputHeight; y++) {
 						uint16_t* src = srcData + uPlaneOffset + y * chromaWidth;
-						if(is8bit)
+						if(outputConfig.is8bit)
 						{
 							uint8_t* dst = (frame->data[1] + y * frame->linesize[1]);
 							// 8bit convertion
@@ -627,7 +627,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					// Copy V plane line by line
 					for (int y = 0; y < outputHeight; y++) {
 						uint16_t* src = srcData + vPlaneOffset + y * chromaWidth;
-						if(is8bit)
+						if(outputConfig.is8bit)
 						{
 							uint8_t* dst = (frame->data[2] + y * frame->linesize[2]);
 							// 8bit convertion
@@ -690,7 +690,7 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					// Copy Y plane line by line
 					for (int y = 0; y < outputHeight; y++) {
 						uint16_t* src = srcData + yPlaneOffset + y * outputWidth;
-						if(is8bit)
+						if(outputConfig.is8bit)
 						{
 							uint8_t* dst = (frame->data[0] + y * frame->linesize[0]);
 							// 8bit convertion

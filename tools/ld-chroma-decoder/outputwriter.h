@@ -64,7 +64,9 @@ public:
         PixelFormat pixelFormat = RGB;
         bool useOutputHeader = false;
         QString outputHeader = "raw";
+		bool useFFV1 = false;
         bool useResampling = false;
+		bool is8bit = false;
 		qint32 resampleWidth = 720;
     };
 
@@ -76,8 +78,8 @@ public:
     void printOutputInfo() const;
 
     // Get the header data to be written at the start of the stream
-    QByteArray getY4mHeader(bool is8bit) const;
-    void initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, bool is8bit, QString outputFileName, QString metadataTxt);
+    QByteArray getY4mHeader() const;
+    void initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, QString outputFileName, QString metadataTxt);
 
     // Get the header data to be written before each frame
     QByteArray getFrameHeader() const;

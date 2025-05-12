@@ -55,7 +55,7 @@ class DecoderPool
 public:
     explicit DecoderPool(Decoder &videoDecoder, Decoder &chromaDecoder, QString inputFileName, QString chromaFileName,
                          LdDecodeMetaData &ldDecodeMetaData,
-                         OutputWriter::Configuration &outputConfig, bool is8bit, QString outputFileName,
+                         OutputWriter::Configuration &outputConfig, QString outputFileName,
                          qint32 startFrame, qint32 length, qint32 maxThreads);
 
     // Decode fields to frames as specified by the constructor args.

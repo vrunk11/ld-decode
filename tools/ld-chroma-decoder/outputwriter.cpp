@@ -104,20 +104,38 @@ void OutputWriter::updateConfiguration(LdDecodeMetaData::VideoParameters &_video
 
 const char *OutputWriter::getPixelName() const
 {
-    switch (config.pixelFormat) {
-    case RGB:
-        return "RGB";
-    case YUV444:
-        return "YUV444";
-	case YUV422:
-        return "YUV422";
-	case YUV411:
-        return "YUV411";
-    case GRAY:
-        return "GRAY";
-    default:
-        return "unknown";
-    }
+	if(config.is8bit)
+	{
+		switch (config.pixelFormat) {
+		case RGB:
+			return "RGB24";
+		case YUV444:
+			return "YUV444p";
+		case YUV422:
+			return "YUV422p";
+		case YUV411:
+			return "YUV411p";
+		case GRAY:
+			return "GRAY8";
+		default:
+			return "unknown";
+		}
+	}
+	else
+	{
+		switch (config.pixelFormat) {
+		case RGB:
+			return "RGB48";
+		case YUV444:
+			return "YUV444p16";
+		case YUV422:
+			return "YUV422p16";
+		case GRAY:
+			return "GRAY16";
+		default:
+			return "unknown";
+		}
+	}
 }
 
 void OutputWriter::printOutputInfo() const
@@ -129,7 +147,7 @@ void OutputWriter::printOutputInfo() const
             << getPixelName() << "frames";
 }
 
-QByteArray OutputWriter::getY4mHeader(bool is8bit) const
+QByteArray OutputWriter::getY4mHeader() const
 {
     // return if output dont needs a header
     if (!config.useOutputHeader || config.outputHeader == "raw") {
@@ -199,7 +217,7 @@ QByteArray OutputWriter::getY4mHeader(bool is8bit) const
 		}
 
 		// Pixel format
-		if(is8bit)
+		if(config.is8bit)
 		{
 			switch (config.pixelFormat) {
 				case YUV444:
@@ -249,7 +267,7 @@ QByteArray OutputWriter::getY4mHeader(bool is8bit) const
     return header.toUtf8();
 }
 
-void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, bool is8bit, QString outputFileName, QString metadataTxt)
+void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, QString outputFileName, QString metadataTxt)
 {
 	int width = outputWidth;
 	int height = outputHeight;
@@ -272,9 +290,19 @@ void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &strea
 		qFatal("Could not create new stream");
 	}
 	
-	codec = avcodec_find_encoder(AV_CODEC_ID_FFV1);
-	if (!codec) {
-		qFatal("FFV1 encoder not found in libavcodec");
+	if(config.useFFV1)
+	{
+		codec = avcodec_find_encoder(AV_CODEC_ID_FFV1);
+		if (!codec) {
+			qFatal("FFV1 encoder not found in libavcodec");
+		}
+	}
+	else
+	{
+		codec = avcodec_find_encoder(AV_CODEC_ID_RAWVIDEO);
+		if (!codec) {
+			qFatal("RAWVIDEO encoder not found in libavcodec");
+		}
 	}
 	
 	codec_ctx = avcodec_alloc_context3(codec);
@@ -328,46 +356,62 @@ void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &strea
 	}
 
 	// Pixel format
-	if(is8bit)
+	uint32_t fourcc_code = 0;
+    if(config.is8bit)
+    {
+        codec_ctx->bits_per_raw_sample = 8;
+        switch (config.pixelFormat) {
+        case YUV444:
+            codec_ctx->pix_fmt = AV_PIX_FMT_YUV444P;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_YUV444P);  // Standard FourCC for YUV444P
+            break;
+        case YUV422:
+            codec_ctx->pix_fmt = AV_PIX_FMT_YUV422P;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_YUV422P);  // Standard FourCC for YUV422P
+            break;
+        case YUV411:
+            codec_ctx->pix_fmt = AV_PIX_FMT_YUV411P;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_YUV411P);  // Standard FourCC for YUV411P
+            break;
+        case GRAY:
+            codec_ctx->pix_fmt = AV_PIX_FMT_GRAY8;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_GRAY8);  // Standard FourCC for GRAY8
+            break;
+        default:
+            codec_ctx->pix_fmt = AV_PIX_FMT_BGR0;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_BGR0);  // Standard FourCC for BGR0
+            break;
+        }
+    }
+    else
+    {
+        codec_ctx->bits_per_raw_sample = 16;
+        switch (config.pixelFormat) {
+        case YUV444:
+            codec_ctx->pix_fmt = AV_PIX_FMT_YUV444P16LE;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_YUV444P16LE);  // Custom FourCC for YUV444P16LE
+            break;
+        case YUV422:
+            codec_ctx->pix_fmt = AV_PIX_FMT_YUV422P16LE;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_YUV422P16LE);  // Custom FourCC for YUV422P16LE
+            break;
+        case GRAY:
+            codec_ctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_GRAY16LE);  // Custom FourCC for GRAY16LE
+            break;
+        default:
+            codec_ctx->pix_fmt = AV_PIX_FMT_RGB48LE;
+            fourcc_code = avcodec_pix_fmt_to_codec_tag(AV_PIX_FMT_RGB48LE);  // Custom FourCC for RGB48LE
+            break;
+        }
+    }
+	//set code to 0 to not break ffv1
+	if(config.useFFV1)
 	{
-		codec_ctx->bits_per_raw_sample = 8;
-		switch (config.pixelFormat) {
-		case YUV444:
-			codec_ctx->pix_fmt = AV_PIX_FMT_YUV444P;
-			break;
-		case YUV422:
-			codec_ctx->pix_fmt = AV_PIX_FMT_YUV422P;
-			break;
-		case YUV411:
-			codec_ctx->pix_fmt = AV_PIX_FMT_YUV411P;
-			break;
-		case GRAY:
-			codec_ctx->pix_fmt = AV_PIX_FMT_GRAY8;
-			break;
-		default:
-			codec_ctx->pix_fmt = AV_PIX_FMT_BGR0;
-			break;
-		}
-	}
-	else
-	{
-		codec_ctx->bits_per_raw_sample = 16;
-		switch (config.pixelFormat) {
-		case YUV444:
-			codec_ctx->pix_fmt = AV_PIX_FMT_YUV444P16LE;
-			break;
-		case YUV422:
-			codec_ctx->pix_fmt = AV_PIX_FMT_YUV422P16LE;
-			break;
-		case GRAY:
-			codec_ctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
-			break;
-		default:
-			codec_ctx->pix_fmt = AV_PIX_FMT_RGB48LE;
-			break;
-		}
+		fourcc_code = 0;
 	}
 	
+	codec_ctx->codec_tag = fourcc_code;
 	// global header required by Matroska/NUT
     if (fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
 	{
@@ -401,7 +445,7 @@ void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &strea
 
 	// ensure the muxer writes your chosen codec and pix_fmt tag, too:
 	stream->codecpar->codec_id  = codec_ctx->codec_id;
-	stream->codecpar->codec_tag = 0;
+	stream->codecpar->codec_tag = fourcc_code;//fourcc_code;
 	stream->codecpar->format    = codec_ctx->pix_fmt;
 	
 	// initialise frame
