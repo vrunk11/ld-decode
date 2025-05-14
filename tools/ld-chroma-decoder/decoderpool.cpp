@@ -133,7 +133,7 @@ bool DecoderPool::process()
     }
 	
 	//libav data
-	if(outputConfig.outputHeader != "raw" || outputConfig.outputHeader != "y4m")
+	if(outputConfig.outputHeader != "raw" && outputConfig.outputHeader != "y4m")
 	{
 		//prepare metadata for header
 		AVDictionary* metadata = nullptr;
@@ -263,7 +263,7 @@ bool DecoderPool::process()
     if (abort) {
         sourceVideo.close();
         targetVideo.close();
-		if(outputConfig.outputHeader != "raw" || outputConfig.outputHeader != "y4m")
+		if(outputConfig.outputHeader != "raw" && outputConfig.outputHeader != "y4m")
 		{
 			av_write_trailer(fmt_ctx);
 			avformat_free_context(fmt_ctx);
@@ -285,7 +285,7 @@ bool DecoderPool::process()
         qCritical() << "Incorrect state at end of processing";
         sourceVideo.close();
         targetVideo.close();
-		if(outputConfig.outputHeader != "raw" || outputConfig.outputHeader != "y4m")
+		if(outputConfig.outputHeader != "raw" && outputConfig.outputHeader != "y4m")
 		{
 			av_write_trailer(fmt_ctx);
 			avformat_free_context(fmt_ctx);
@@ -309,7 +309,7 @@ bool DecoderPool::process()
     sourceVideo.close();
 	
 	//finalise file and close
-	if(outputConfig.outputHeader == "raw" || outputConfig.outputHeader == "y4m")
+	if(outputConfig.outputHeader != "raw" && outputConfig.outputHeader != "y4m")
 	{
 		av_write_trailer(fmt_ctx);
 		avformat_free_context(fmt_ctx);

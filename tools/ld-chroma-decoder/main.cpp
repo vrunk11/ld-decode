@@ -619,11 +619,11 @@ int main(int argc, char *argv[])
     } else {
 		if (outputConfig.outputHeader == "y4m")
 		{
-			outputFormatName = "yuv444p";
+			outputFormatName = "yuv444p16";
 		}
 		else
 		{
-			outputFormatName = "rgb";
+			outputFormatName = "rgb48";
 		}
     }
     if (outputFormatName == "yuv" || outputFormatName == "yuv444p" || outputFormatName == "yuv444p16" || outputFormatName == "yuv422p" || outputFormatName == "yuv422p16" || outputFormatName == "yuv411p" || outputFormatName == "gray16" || outputFormatName == "gray8" || outputFormatName == "y16" || outputFormatName == "y8" || outputFormatName == "y4m") { // keep yuv and y4m option as legacy
