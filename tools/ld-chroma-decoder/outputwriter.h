@@ -29,6 +29,7 @@
 #include <QtGlobal>
 #include <QByteArray>
 #include <QVector>
+#include <QtMath>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -79,7 +80,7 @@ public:
 
     // Get the header data to be written at the start of the stream
     QByteArray getY4mHeader() const;
-    void initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, QString outputFileName, QString metadataTxt);
+    void initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, QString outputFileName, AVDictionary* metadata);
 
     // Get the header data to be written before each frame
     QByteArray getFrameHeader() const;

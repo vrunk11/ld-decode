@@ -61,7 +61,6 @@ void OutputWriter::updateConfiguration(LdDecodeMetaData::VideoParameters &_video
     activeWidth = videoParameters.activeVideoEnd - videoParameters.activeVideoStart;
     activeHeight = videoParameters.lastActiveFrameLine - videoParameters.firstActiveFrameLine;
     outputHeight = activeHeight;
-	outputWidth = config.useResampling ? config.resampleWidth : videoParameters.activeVideoEnd - videoParameters.activeVideoStart;
 
     if (config.paddingAmount > 1) {
         // Some video codecs require the width and height of a video to be divisible by
@@ -100,6 +99,7 @@ void OutputWriter::updateConfiguration(LdDecodeMetaData::VideoParameters &_video
         // Update the caller's copy, now we've adjusted the active area
         _videoParameters = videoParameters;
     }
+	outputWidth = config.useResampling ? config.resampleWidth : activeWidth;
 }
 
 const char *OutputWriter::getPixelName() const
@@ -267,7 +267,7 @@ QByteArray OutputWriter::getY4mHeader() const
     return header.toUtf8();
 }
 
-void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, QString outputFileName, QString metadataTxt)
+void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &stream,const AVCodec* &codec, AVCodecContext* &codec_ctx, AVDictionary* &codec_opt, AVFrame* &frame, QString outputFileName, AVDictionary* metadata)
 {
 	int width = outputWidth;
 	int height = outputHeight;
@@ -314,6 +314,8 @@ void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &strea
 	if (!frame) {
 		qFatal("Could not create a frame");
 	}
+	
+	fmt_ctx->metadata = metadata;
 	
 	codec_ctx->codec_type = AVMEDIA_TYPE_VIDEO;
 	codec_ctx->width     = width;
@@ -461,9 +463,6 @@ void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &strea
 	if (avio_open(&fmt_ctx->pb, outputFileName.toStdString().c_str(), AVIO_FLAG_WRITE) < 0) {
 		qFatal("error opening output file");
 	}
-	
-	//metadata
-	av_dict_set(&fmt_ctx->metadata, "comment", metadataTxt.toStdString().c_str(), 0);
 	
 	if (avformat_write_header(fmt_ctx, nullptr) < 0)
 	{

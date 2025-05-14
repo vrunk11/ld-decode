@@ -135,7 +135,8 @@ bool DecoderPool::process()
 	//libav data
 	if(outputConfig.outputHeader != "raw" || outputConfig.outputHeader != "y4m")
 	{
-		//write metadata for header
+		//prepare metadata for header
+		AVDictionary* metadata = nullptr;
 		QStringList metadataLine;
 		if(videoParameters.system == NTSC)//MonoDecoder& DecoderPool::getDecoderAsMono() { return  static_cast<MonoDecoder&> (videoDecoder); }
 		{
@@ -144,7 +145,7 @@ bool DecoderPool::process()
 			{
 				decoderCfg = &static_cast<NtscDecoder&>(chromaDecoder).getConfig().combConfig;
 			}
-			
+			//metatadat for the comment field
 			metadataLine << "Decoded by ld-chroma-decoder"
 						<< "\nSource :" << (isYC ? "Y/C" : "CVBS")
 						<< "\nStandard :" << (videoParameters.system == PAL ? "PAL" : videoParameters.system == PAL_M ? "PAL_M" : "NTSC")
@@ -159,6 +160,19 @@ bool DecoderPool::process()
 						<< "\nActive video start :" << QString::number(videoParameters.activeVideoStart)
 						<< "\nActive video end :" << QString::number(videoParameters.activeVideoEnd)
 						<< "\nGithub : https://github.com/happycube/ld-decode\n";
+			//rewrite in custom metadata			
+			av_dict_set(&metadata, "Source", (isYC ? "Y/C" : "CVBS"), 0);
+			av_dict_set(&metadata, "Standard", (videoParameters.system == PAL ? "PAL" : videoParameters.system == PAL_M ? "PAL_M" : "NTSC"), 0);
+			av_dict_set(&metadata, "Decoder", QString("NTSC %1D").arg(decoderCfg->dimensions).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Chroma gain", QString::number(decoderCfg->chromaGain).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Chroma phase", QString::number(decoderCfg->chromaPhase).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Phase compensation", (decoderCfg->phaseCompensation ? "ON" : "OFF"), 0);
+			av_dict_set(&metadata, "Luma NR", QString::number(decoderCfg->yNRLevel).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Chroma NR", QString::number(decoderCfg->cNRLevel).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Black level", QString::number(videoParameters.black16bIre).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "White level", QString::number(videoParameters.white16bIre).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Active video start", QString::number(videoParameters.activeVideoStart).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Active video end", QString::number(videoParameters.activeVideoEnd).toStdString().c_str(), 0);
 		}
 		else//PAL
 		{
@@ -182,9 +196,26 @@ bool DecoderPool::process()
 						<< "\nActive video start :" << QString::number(videoParameters.activeVideoStart)
 						<< "\nActive video end :" << QString::number(videoParameters.activeVideoEnd)
 						<< "\nGithub : https://github.com/happycube/ld-decode\n";
+			//rewrite in custom metadata			
+			av_dict_set(&metadata, "Source", (isYC ? "Y/C" : "CVBS"), 0);
+			av_dict_set(&metadata, "Standard", (videoParameters.system == PAL ? "PAL" : videoParameters.system == PAL_M ? "PAL_M" : "NTSC"), 0);
+			av_dict_set(&metadata, "Decoder", (decoderCfg->chromaFilter == PalColour::transform3DFilter ? "PAL Transform 3D" : decoderCfg->chromaFilter == PalColour::transform2DFilter ? "PAL Transform 2D" : "PAL 2D"), 0);
+			av_dict_set(&metadata, "Transform threshold", QString::number(decoderCfg->transformThreshold).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Simple PAL", (decoderCfg->simplePAL ? "ON" : "OFF"), 0);
+			av_dict_set(&metadata, "Chroma gain", QString::number(decoderCfg->chromaGain).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Chroma phase", QString::number(decoderCfg->chromaPhase).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Luma NR", QString::number(decoderCfg->yNRLevel).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Black level", QString::number(videoParameters.black16bIre).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "White level", QString::number(videoParameters.white16bIre).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Active video start", QString::number(videoParameters.activeVideoStart).toStdString().c_str(), 0);
+			av_dict_set(&metadata, "Active video end", QString::number(videoParameters.activeVideoEnd).toStdString().c_str(), 0);
 		}
 		QString metadataTxt = metadataLine.join(' ');
-		outputWriter.initVideoEncoding(fmt_ctx, stream, codec, codec_ctx, codec_opt, frame, outputFileName, metadataTxt);
+		
+		//store the metadata
+		av_dict_set(&metadata, "comment", metadataTxt.toStdString().c_str(), 0);
+		av_dict_set(&metadata, "genre", (isYC ? (videoParameters.tapeFormat != "" ? videoParameters.tapeFormat.toStdString().c_str() : "S-VIDEO") : "LASERDISC") , 0);
+		outputWriter.initVideoEncoding(fmt_ctx, stream, codec, codec_ctx, codec_opt, frame, outputFileName, metadata);
 		pkt = av_packet_alloc();
 	}
 
@@ -707,8 +738,6 @@ bool DecoderPool::putOutputFrame(qint32 frameNumber, OutputFrame &outputFrame)
 					break;
 				}
 			}
-			//memcpy(frame->data[0], outputData.data(), outputData.size() * sizeof(uint16_t));
-			//qInfo() << frame->linesize[0];
 			
 			frame->pts = outputFrameNumber;
 			

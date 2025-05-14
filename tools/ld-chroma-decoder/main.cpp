@@ -333,7 +333,7 @@ int main(int argc, char *argv[])
 	QString chromaFileName = inputFileName;
 	chromaFileName.chop(4);
 	chromaFileName += "_chroma.tbc";
-	if(!parser.isSet(cvbsOnlyOption))
+	if(!parser.isSet(cvbsOnlyOption) && !parser.isSet(setBwModeOption) && !(parser.value(outputFormatOption) == "gray16" || parser.value(outputFormatOption) == "gray8" || parser.value(outputFormatOption) == "y16" || parser.value(outputFormatOption) == "y8") && !(parser.value(decoderOption) == "mono"))
 	{
 		if (parser.isSet(chromaInputOption)) {
 			chromaFileName = parser.value(chromaInputOption);
@@ -352,7 +352,7 @@ int main(int argc, char *argv[])
 	else
 	{
 		chromaFileName = "";
-		qInfo("Source is assumed to be CVBS");
+		qInfo("Source is assumed to be CVBS or B&W");
 	}
 
 
@@ -626,7 +626,7 @@ int main(int argc, char *argv[])
 			outputFormatName = "rgb";
 		}
     }
-    if (outputFormatName == "yuv" || outputFormatName == "yuv444p" || outputFormatName == "yuv444p16" || outputFormatName == "yuv422p" || outputFormatName == "yuv422p16" || outputFormatName == "yuv411p" || outputFormatName == "y16" || outputFormatName == "y8" || outputFormatName == "y4m") { // keep yuv and y4m option as legacy
+    if (outputFormatName == "yuv" || outputFormatName == "yuv444p" || outputFormatName == "yuv444p16" || outputFormatName == "yuv422p" || outputFormatName == "yuv422p16" || outputFormatName == "yuv411p" || outputFormatName == "gray16" || outputFormatName == "gray8" || outputFormatName == "y16" || outputFormatName == "y8" || outputFormatName == "y4m") { // keep yuv and y4m option as legacy
         if (outputFormatName == "y4m") {
             outputConfig.useOutputHeader = true;
 			outputConfig.outputHeader = "y4m";
