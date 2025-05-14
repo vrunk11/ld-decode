@@ -1,63 +1,57 @@
-# FindSoxr.cmake
+#--- Begin FindSoxr.cmake ---------------------------
 #
-# Finds the soxr library
+# FindSoxr.cmake — locate the libsoxr resampling library
 #
-# This will define the following variables
+# Defines:
+#   Soxr_FOUND
+#   Soxr_INCLUDE_DIRS
+#   Soxr_LIBRARIES
+#   Imported target: Soxr::soxr
 #
-#    Soxr_FOUND
-#    Soxr_INCLUDE_DIRS
-#    Soxr_LIBRARIES
-#
-# and the following imported targets
-#
-#     Soxr::Soxr
-#
-
+include(CMakeFindDependencyMacro)   # for pkg_check_modules()
 find_package(PkgConfig QUIET)
-if(PKG_CONFIG_FOUND)
-  pkg_check_modules(PC_Soxr QUIET soxr)
+pkg_check_modules(PC_Soxr QUIET soxr)
+
+# Allow user to set a root hint:
+if(NOT DEFINED Soxr_ROOT)
+  set(Soxr_ROOT "")
 endif()
 
-# Find include directory
-find_path(Soxr_INCLUDE_DIR
+find_path(Soxr_INCLUDE_DIRS
   NAMES soxr.h
-  PATHS
-    ${PC_Soxr_INCLUDE_DIRS}
-    /usr/include
-    /usr/local/include
-  PATH_SUFFIXES soxr
+  HINTS ${Soxr_ROOT}
+        ${PC_Soxr_INCLUDEDIR}
+  PATH_SUFFIXES include
 )
 
-# Find library
-find_library(Soxr_LIBRARY
-  NAMES soxr libsoxr
-  PATHS
-    ${PC_Soxr_LIBRARY_DIRS}
-    /usr/lib
-    /usr/local/lib
-    /usr/lib64
-    /usr/local/lib64
+find_library(Soxr_LIBRARIES
+  NAMES soxr
+  HINTS ${Soxr_ROOT}
+        ${PC_Soxr_LIBDIR}
+  PATH_SUFFIXES lib
 )
 
-# Set include directories and libraries
-set(Soxr_INCLUDE_DIRS ${Soxr_INCLUDE_DIR})
-set(Soxr_LIBRARIES ${Soxr_LIBRARY})
-
-# Handle REQUIRED and QUIET arguments
+# Handle required args, set Soxr_FOUND
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Soxr
-  REQUIRED_VARS Soxr_LIBRARY Soxr_INCLUDE_DIR
-  VERSION_VAR PC_Soxr_VERSION
+    REQUIRED_VARS Soxr_LIBRARIES Soxr_INCLUDE_DIRS
+    VERSION_VAR Soxr_VERSION_STRING
 )
 
-# Create imported target
-if(Soxr_FOUND AND NOT TARGET Soxr::Soxr)
-  add_library(Soxr::Soxr UNKNOWN IMPORTED)
-  set_target_properties(Soxr::Soxr PROPERTIES
-    IMPORTED_LOCATION "${Soxr_LIBRARY}"
-    INTERFACE_INCLUDE_DIRECTORIES "${Soxr_INCLUDE_DIR}"
+mark_as_advanced(
+  Soxr_ROOT
+  Soxr_INCLUDE_DIRS
+  Soxr_LIBRARIES
+)
+
+# Create an imported target for modern CMake usage
+if(Soxr_FOUND AND NOT TARGET Soxr::soxr)
+  add_library(Soxr::soxr UNKNOWN IMPORTED)
+  set_target_properties(Soxr::soxr PROPERTIES
+    IMPORTED_LOCATION "${Soxr_LIBRARIES}"
+    INTERFACE_INCLUDE_DIRECTORIES "${Soxr_INCLUDE_DIRS}"
+    # on systems where pkg-config lists extra cflags
+    INTERFACE_COMPILE_OPTIONS "${PC_Soxr_CFLAGS_OTHER}"
   )
 endif()
-
-# Mark as advanced
-mark_as_advanced(Soxr_INCLUDE_DIR Soxr_LIBRARY)
+#--- End FindSoxr.cmake -----------------------------
