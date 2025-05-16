@@ -689,11 +689,11 @@ int main(int argc, char *argv[])
 				if(metaData.getVideoParameters().isWidescreen)
 				{
 					//adjust for chroma subsampling
-					if (outputFormatName == "yuv422")
+					if (outputConfig.pixelFormat == OutputWriter::PixelFormat::YUV422)
 					{
 						outputConfig.resampleWidth = 1029;
 					}
-					else if (outputFormatName == "yuv411")
+					else if (outputConfig.pixelFormat == OutputWriter::PixelFormat::YUV411)
 					{
 						outputConfig.resampleWidth = 1028;
 					}
@@ -705,7 +705,7 @@ int main(int argc, char *argv[])
 				else
 				{
 					//adjust for chroma subsampling
-					if (outputFormatName == "yuv422" || outputFormatName == "yuv411")
+					if (outputConfig.pixelFormat == OutputWriter::PixelFormat::YUV422 || outputConfig.pixelFormat == OutputWriter::PixelFormat::YUV411)
 					{
 						outputConfig.resampleWidth = 772;
 					}
@@ -782,7 +782,7 @@ int main(int argc, char *argv[])
 	else
 	{
 		//enable resampling anyway for resampling the chroma
-		if(outputFormatName == "yuv422" || outputFormatName == "yuv411")
+		if(outputConfig.pixelFormat == OutputWriter::PixelFormat::YUV422 || outputConfig.pixelFormat == OutputWriter::PixelFormat::YUV411)
 		{
 			outputConfig.resampleWidth = metaData.getVideoParameters().activeVideoEnd - metaData.getVideoParameters().activeVideoStart;
 			outputConfig.useResampling = true;
