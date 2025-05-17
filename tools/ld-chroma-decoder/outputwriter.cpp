@@ -517,8 +517,8 @@ void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &output
 		
 		//resize to be safe
 		componentFrameIn.getY()->resize(inSize);
-		componentFrameIn.getU()->resize(inSize);
-		componentFrameIn.getV()->resize(inSize);
+		componentFrameIn.getU()->resize(inSize+(videoParameters.fieldWidth*2));
+		componentFrameIn.getV()->resize(inSize+(videoParameters.fieldWidth*2));
 		
 		//use 4:4:4 size to be safe
 		componentFrameResample.getY()->resize(outSize);
@@ -606,7 +606,7 @@ void OutputWriter::convert(ComponentFrame &componentFrameIn, OutputFrame &output
     case GRAY:
         break;
     }
-    outputFrame.resize(outSize);
+    outputFrame.resize(outSize+outputWidth);
 
     // Clear padding
     clearPadLines(0, topPadLines, outputFrame);
@@ -787,6 +787,7 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
             break;
         }
 		case YUV422: {
+			const qint32 inputLineChroma = (videoParameters.firstActiveFrameLine/2.0) + lineNumber;
 			const double resizeRatioChroma = resizeRatio;
 			const double leftPad  = qRound(videoParameters.activeVideoStart * resizeRatio);
 			const double rightPad = qRound((videoParameters.fieldWidth - videoParameters.activeVideoEnd) * resizeRatio);
@@ -800,16 +801,13 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 				outY[x] = static_cast<quint16>(qBound(Y_MIN, ((inY[x] - yOffset) * yScale) + Y_ZERO, Y_MAX));
 			}
 
-			if(inputLine*2 < activeHeight + (videoParameters.firstActiveFrameLine * 2))
+			if(inputLineChroma*2 < outputHeight + (videoParameters.firstActiveFrameLine * 2))
 			{
-				const double *inputU = componentFrame.u(inputLine - qRound((videoParameters.firstActiveFrameLine/2.0))) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/2.0);
-				const double *inputV = componentFrame.v(inputLine - qRound((videoParameters.firstActiveFrameLine/2.0))) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/2.0);
+				const double *inputU = componentFrame.u(inputLineChroma) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/2.0);
+				const double *inputV = componentFrame.v(inputLineChroma) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/2.0);
 				
 				// Convert Y'UV to Y'CbCr [Poynton eq 25.5 p307]
 				quint16 *outCB = outY + (outputWidth * (outputHeight));
-				if (videoParameters.system != PAL) {
-					outCB = outY + (outputWidth * (outputHeight-1));
-				}
 				quint16 *outCR = outCB + qFloor(outputWidth * (outputHeight/2.0));
 
 				const double cbScale = (C_SCALE / (ONE_MINUS_Kb * kB)) / uvRange;
@@ -831,6 +829,7 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
             break;
         }
 		case YUV411: {
+			const qint32 inputLineChroma = (videoParameters.firstActiveFrameLine/4.0) + lineNumber;
 			const double resizeRatioChroma = resizeRatio;
 			const double leftPad  = videoParameters.activeVideoStart * resizeRatio;
 			const double rightPad = (videoParameters.fieldWidth - videoParameters.activeVideoEnd) * resizeRatio;
@@ -844,16 +843,13 @@ void OutputWriter::convertLine(qint32 lineNumber, const ComponentFrame &componen
 				outY[x] = static_cast<quint16>(qBound(Y_MIN, ((inY[x] - yOffset) * yScale) + Y_ZERO, Y_MAX));
 			}
 
-			if(inputLine*4 < activeHeight + (videoParameters.firstActiveFrameLine * 4))
+			if(inputLineChroma*4 < outputHeight + (videoParameters.firstActiveFrameLine * 4))
 			{
-				const double *inputU = componentFrame.u((inputLine) - qRound((videoParameters.firstActiveFrameLine/2.0) + (videoParameters.firstActiveFrameLine/4.0))) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/4.0);
-				const double *inputV = componentFrame.v((inputLine) - qRound((videoParameters.firstActiveFrameLine/2.0) + (videoParameters.firstActiveFrameLine/4.0))) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/4.0);
+				const double *inputU = componentFrame.u(inputLineChroma) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/4.0);
+				const double *inputV = componentFrame.v(inputLineChroma) + qRound((videoParameters.activeVideoStart * resizeRatioChroma)/4.0);
 				
 				// Convert Y'UV to Y'CbCr [Poynton eq 25.5 p307]
 				quint16 *outCB = outY + (outputWidth * (outputHeight));
-				if (videoParameters.system != PAL) {
-					outCB = outY + (outputWidth * (outputHeight-2));
-				}
 				quint16 *outCR = outCB + qRound(outputWidth * (outputHeight/4.0));
 
 				
