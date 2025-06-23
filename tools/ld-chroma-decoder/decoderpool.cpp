@@ -265,6 +265,12 @@ bool DecoderPool::process()
         targetVideo.close();
 		if(outputConfig.outputHeader != "raw" && outputConfig.outputHeader != "y4m")
 		{
+			if (outputFileName == "-") {
+				if (fmt_ctx->pb) {
+					av_freep(&fmt_ctx->pb->buffer);
+					avio_context_free(&fmt_ctx->pb);
+				}
+			}
 			av_write_trailer(fmt_ctx);
 			avformat_free_context(fmt_ctx);
 			av_frame_free(&frame);
@@ -287,6 +293,12 @@ bool DecoderPool::process()
         targetVideo.close();
 		if(outputConfig.outputHeader != "raw" && outputConfig.outputHeader != "y4m")
 		{
+			if (outputFileName == "-") {
+				if (fmt_ctx->pb) {
+					av_freep(&fmt_ctx->pb->buffer);
+					avio_context_free(&fmt_ctx->pb);
+				}
+			}
 			av_write_trailer(fmt_ctx);
 			avformat_free_context(fmt_ctx);
 			av_frame_free(&frame);
@@ -311,6 +323,12 @@ bool DecoderPool::process()
 	//finalise file and close
 	if(outputConfig.outputHeader != "raw" && outputConfig.outputHeader != "y4m")
 	{
+		if (outputFileName == "-") {
+			if (fmt_ctx->pb) {
+				av_freep(&fmt_ctx->pb->buffer);
+				avio_context_free(&fmt_ctx->pb);
+			}
+		}
 		av_write_trailer(fmt_ctx);
 		avformat_free_context(fmt_ctx);
 		av_frame_free(&frame);

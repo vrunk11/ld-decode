@@ -460,8 +460,39 @@ void OutputWriter::initVideoEncoding(AVFormatContext* &fmt_ctx, AVStream* &strea
         qFatal("Could not allocate frame buffers");
     }
 	
-	if (avio_open(&fmt_ctx->pb, outputFileName.toStdString().c_str(), AVIO_FLAG_WRITE) < 0) {
-		qFatal("error opening output file");
+	if (outputFileName == "-")
+	{
+		const int buffer_size = 4096;
+		uint8_t* buffer = static_cast<uint8_t*>(av_malloc(buffer_size));
+		if (!buffer) {
+			qFatal("Could not allocate buffer for AVIOContext");
+		}
+
+		AVIOContext* avio_ctx = avio_alloc_context(
+			buffer,                      // Your own buffer
+			buffer_size,                 // Buffer size
+			AVIO_FLAG_WRITE,             // Writing only
+			stdout,                      // FILE* as opaque
+			nullptr,                     // No read
+			[](void* opaque, uint8_t* buf, int buf_size) -> int {
+				return static_cast<int>(fwrite(buf, 1, buf_size, static_cast<FILE*>(opaque)));
+			},
+			nullptr                      // No seek
+		);
+
+		if (!avio_ctx) {
+			av_free(buffer);
+			qFatal("Could not allocate AVIOContext for stdout");
+		}
+
+		fmt_ctx->pb = avio_ctx;
+		fmt_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
+	}
+	else
+	{
+		if (avio_open(&fmt_ctx->pb, outputFileName.toStdString().c_str(), AVIO_FLAG_WRITE) < 0) {
+			qFatal("error opening output file");
+		}
 	}
 	
 	if (avformat_write_header(fmt_ctx, nullptr) < 0)
